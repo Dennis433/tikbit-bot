@@ -41,6 +41,24 @@ def get_wallet(user_id):
     conn.close()
     return row[0] if row else None
 
+def get_user_id_by_wallet(wallet):
+    """Find user_id from wallet address — used by transaction monitor"""
+    conn = sqlite3.connect("presale.db")
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM wallets WHERE wallet=?", (wallet,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def get_username_by_wallet(wallet):
+    """Find username from wallet address"""
+    conn = sqlite3.connect("presale.db")
+    c = conn.cursor()
+    c.execute("SELECT username FROM wallets WHERE wallet=?", (wallet,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
 def add_contribution(user_id, username, wallet, amount_sol, tx_signature):
     tokens = amount_sol / config.PRESALE_PRICE_SOL
     conn = sqlite3.connect("presale.db")
