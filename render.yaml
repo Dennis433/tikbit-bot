@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: tikbit-presale
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: RPC_URL
+        value: https://api.mainnet-beta.solana.com
+      - key: PRESALE_WALLET
+        value: GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe
+      - key: TOKEN_MINT
+        value: 3EKzLrEqgERdg4xAkmzY3LLb2RW9SfJ8WFxNLRd2u73yE
+      - key: TOKEN_NAME
+        value: TIKBIT
+      - key: TOKEN_SYMBOL
+        value: TKB
+      - key: WEBAPP_URL
+        sync: false
