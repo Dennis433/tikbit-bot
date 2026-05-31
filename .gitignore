@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+presale.db
+venv/
+officiial_site/
