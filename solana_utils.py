@@ -261,101 +261,190 @@ def _load_airdrop_keypair():
 
 def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     """
-    Send TKB tokens from the airdrop wallet to a recipient.
-
-    Requires on Render:
-      AIRDROP_PRIVATE_KEY  — private key of 3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm
-      TOKEN_MINT           — 3EKzLrEqgERdg4xAkmzY3LLb2RW9SfJ8WFxNLRd2u73yE
+    Send TKB tokens from the airdrop wallet to recipient.
+    Uses solders + solana-py + spl-token.
+    Requires AIRDROP_PRIVATE_KEY in environment.
     """
     result = {"success": False, "tx_signature": None, "message": ""}
 
     if not config.AIRDROP_PRIVATE_KEY:
-        # Key not set yet — queue for manual airdrop
-        logger.warning(f"[AIRDROP QUEUE] {recipient_wallet} → {int(amount_tokens):,} TKB")
+        logger.warning(f"[AIRDROP QUEUE] {recipient_wallet} → {int(amount_tokens):,} TKB — AIRDROP_PRIVATE_KEY not set")
         result["success"]      = True
         result["tx_signature"] = "QUEUED"
-        result["message"]      = (
-            f"✅ {int(amount_tokens):,} TKB queued for airdrop!\n"
-            f"Set AIRDROP_PRIVATE_KEY on Render to enable automatic sending."
-        )
+        result["message"]      = f"✅ {int(amount_tokens):,} TKB queued — set AIRDROP_PRIVATE_KEY on Render"
         return result
 
     try:
         from solders.keypair import Keypair
         from solders.pubkey import Pubkey
         from solana.rpc.api import Client
+        from solana.rpc.types import TxOpts
         from solana.transaction import Transaction
-        from spl.token.instructions import (
-            transfer_checked, TransferCheckedParams,
-            create_associated_token_account, get_associated_token_address
-        )
-        from spl.token.constants import TOKEN_PROGRAM_ID
-        from solders.system_program import ID as SYS_PROGRAM_ID
 
-        keypair          = _load_airdrop_keypair()
-        client           = Client(config.RPC_URL)
+        keypair = _load_airdrop_keypair()
+        client  = Client(config.RPC_URL)
+
         sender_pubkey    = keypair.pubkey()
         recipient_pubkey = Pubkey.from_string(recipient_wallet)
         mint_pubkey      = Pubkey.from_string(config.TOKEN_MINT)
+        amount_raw       = int(amount_tokens * (10 ** config.TOKEN_DECIMALS))
 
-        sender_ata    = get_associated_token_address(sender_pubkey, mint_pubkey)
-        recipient_ata = get_associated_token_address(recipient_pubkey, mint_pubkey)
+        # Derive Associated Token Accounts
+        TOKEN_PROGRAM_ID    = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+        ASSOC_TOKEN_PROG_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
 
-        amount_raw = int(amount_tokens * (10 ** config.TOKEN_DECIMALS))
+        def get_ata(owner: Pubkey, mint: Pubkey) -> Pubkey:
+            seeds = [bytes(owner), bytes(TOKEN_PROGRAM_ID), bytes(mint)]
+            return Pubkey.find_program_address(seeds, ASSOC_TOKEN_PROG_ID)[0]
 
-        blockhash = client.get_latest_blockhash().value.blockhash
+        sender_ata    = get_ata(sender_pubkey, mint_pubkey)
+        recipient_ata = get_ata(recipient_pubkey, mint_pubkey)
 
-        txn = Transaction()
-        txn.recent_blockhash = blockhash
-        txn.fee_payer        = sender_pubkey
+        logger.info(f"Sender ATA: {sender_ata}")
+        logger.info(f"Recipient ATA: {recipient_ata}")
 
-        # Create recipient ATA if it doesn't exist yet
-        ata_info = client.get_account_info(recipient_ata)
-        if ata_info.value is None:
-            logger.info(f"Creating ATA for {recipient_wallet}")
-            txn.add(
-                create_associated_token_account(
+        # Try spl-token library first
+        try:
+            from spl.token.instructions import (
+                transfer_checked, TransferCheckedParams,
+                create_associated_token_account
+            )
+            from spl.token.constants import TOKEN_PROGRAM_ID as SPL_TOKEN_PROGRAM_ID
+
+            blockhash = client.get_latest_blockhash().value.blockhash
+            txn = Transaction()
+            txn.recent_blockhash = blockhash
+            txn.fee_payer = sender_pubkey
+
+            # Create recipient ATA if needed
+            ata_info = client.get_account_info(recipient_ata)
+            if ata_info.value is None:
+                logger.info(f"Creating ATA for {recipient_wallet}")
+                txn.add(create_associated_token_account(
                     payer=sender_pubkey,
                     owner=recipient_pubkey,
                     mint=mint_pubkey,
-                )
-            )
+                ))
 
-        txn.add(
-            transfer_checked(
-                TransferCheckedParams(
-                    program_id=TOKEN_PROGRAM_ID,
-                    source=sender_ata,
-                    mint=mint_pubkey,
-                    dest=recipient_ata,
-                    owner=sender_pubkey,
-                    amount=amount_raw,
-                    decimals=config.TOKEN_DECIMALS,
-                    signers=[],
-                )
-            )
-        )
+            txn.add(transfer_checked(TransferCheckedParams(
+                program_id=SPL_TOKEN_PROGRAM_ID,
+                source=sender_ata,
+                mint=mint_pubkey,
+                dest=recipient_ata,
+                owner=sender_pubkey,
+                amount=amount_raw,
+                decimals=config.TOKEN_DECIMALS,
+                signers=[],
+            )))
 
-        txn.sign(keypair)
-        response = client.send_transaction(txn, keypair)
-        sig = str(response.value)
+            txn.sign(keypair)
+            resp = client.send_transaction(txn, keypair,
+                opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"))
+            sig = str(resp.value)
+            logger.info(f"✅ Token TX: {sig} | {int(amount_tokens):,} TKB → {recipient_wallet}")
+            result["success"] = True
+            result["tx_signature"] = sig
+            result["message"] = f"✅ {int(amount_tokens):,} TKB sent! TX: {sig}"
+            return result
 
-        logger.info(f"Token transfer OK: {sig} → {recipient_wallet} ({int(amount_tokens):,} TKB)")
-        result["success"]      = True
-        result["tx_signature"] = sig
-        result["message"]      = f"✅ {int(amount_tokens):,} TKB sent! TX: {sig}"
-        return result
+        except ImportError:
+            logger.warning("spl-token not available, trying raw instruction")
 
-    except ImportError as e:
-        # spl-token / solders not available — queue
-        logger.warning(f"spl-token not available ({e}), queuing airdrop")
-        logger.info(f"[AIRDROP QUEUE] {recipient_wallet} → {int(amount_tokens):,} TKB")
-        result["success"]      = True
-        result["tx_signature"] = "QUEUED"
-        result["message"]      = f"✅ {int(amount_tokens):,} TKB queued for airdrop!"
+        # Fallback: build transfer_checked instruction manually via RPC
+        # This works even without spl-token library installed
+        import struct, base64
+
+        def build_transfer_checked_ix(source, mint, dest, owner, amount, decimals):
+            # Instruction discriminator for transfer_checked = 12
+            data = struct.pack("<BQB", 12, amount, decimals)
+            keys = [
+                {"pubkey": str(source),  "isSigner": False, "isWritable": True},
+                {"pubkey": str(mint),    "isSigner": False, "isWritable": False},
+                {"pubkey": str(dest),    "isSigner": False, "isWritable": True},
+                {"pubkey": str(owner),   "isSigner": True,  "isWritable": False},
+            ]
+            return {"keys": keys, "program_id": str(TOKEN_PROGRAM_ID), "data": list(data)}
+
+        # Use Solana RPC sendTransaction with base64 encoded tx
+        blockhash_data = _rpc({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getLatestBlockhash",
+            "params": [{"commitment": "finalized"}]
+        })
+        blockhash = blockhash_data["result"]["value"]["blockhash"]
+
+        # Check/create recipient ATA via RPC
+        ata_info = _rpc({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getAccountInfo",
+            "params": [str(recipient_ata), {"encoding": "base64"}]
+        })
+
+        needs_ata = ata_info["result"]["value"] is None
+        if needs_ata:
+            logger.info(f"Recipient ATA needs creation: {recipient_ata}")
+
+        # Build and sign transaction using solders
+        from solders.transaction import Transaction as SoldersTransaction
+        from solders.message import Message
+        from solders.instruction import Instruction, AccountMeta
+        from solders.hash import Hash
+
+        accounts_transfer = [
+            AccountMeta(sender_ata, False, True),
+            AccountMeta(mint_pubkey, False, False),
+            AccountMeta(recipient_ata, False, True),
+            AccountMeta(sender_pubkey, True, False),
+        ]
+        # transfer_checked data: discriminator(1) + amount(8) + decimals(1)
+        ix_data = bytes([12]) + amount_raw.to_bytes(8, "little") + bytes([config.TOKEN_DECIMALS])
+        transfer_ix = Instruction(TOKEN_PROGRAM_ID, ix_data, accounts_transfer)
+
+        instructions = []
+        if needs_ata:
+            # create_associated_token_account instruction
+            SYSTEM_PROGRAM = Pubkey.from_string("11111111111111111111111111111111")
+            SYSVAR_RENT    = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
+            ata_accounts = [
+                AccountMeta(sender_pubkey,    True,  True),
+                AccountMeta(recipient_ata,    False, True),
+                AccountMeta(recipient_pubkey, False, False),
+                AccountMeta(mint_pubkey,      False, False),
+                AccountMeta(SYSTEM_PROGRAM,   False, False),
+                AccountMeta(TOKEN_PROGRAM_ID, False, False),
+                AccountMeta(SYSVAR_RENT,      False, False),
+            ]
+            create_ata_ix = Instruction(ASSOC_TOKEN_PROG_ID, bytes([]), ata_accounts)
+            instructions.append(create_ata_ix)
+
+        instructions.append(transfer_ix)
+
+        msg = Message.new_with_blockhash(instructions, sender_pubkey, Hash.from_string(blockhash))
+        tx = SoldersTransaction.new_unsigned(msg)
+        tx.sign([keypair], Hash.from_string(blockhash))
+
+        tx_bytes = bytes(tx)
+        tx_b64   = base64.b64encode(tx_bytes).decode()
+
+        send_resp = _rpc({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "sendTransaction",
+            "params": [tx_b64, {"encoding": "base64", "preflightCommitment": "confirmed"}]
+        })
+
+        if send_resp and "result" in send_resp and send_resp["result"]:
+            sig = send_resp["result"]
+            logger.info(f"✅ Token TX (raw): {sig} | {int(amount_tokens):,} TKB → {recipient_wallet}")
+            result["success"]      = True
+            result["tx_signature"] = sig
+            result["message"]      = f"✅ {int(amount_tokens):,} TKB sent! TX: {sig}"
+        else:
+            err = send_resp.get("error", {}) if send_resp else {}
+            raise Exception(f"RPC error: {err.get('message', send_resp)}")
+
         return result
 
     except Exception as e:
-        logger.error(f"Token send error: {e}")
+        logger.error(f"Token send error: {e}", exc_info=True)
         result["message"] = f"❌ Token send failed: {str(e)}"
         return result
