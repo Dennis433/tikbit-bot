@@ -14,306 +14,222 @@ body {
   color: #fff;
   font-family: 'Segoe UI', system-ui, sans-serif;
   min-height: 100vh;
-  padding: 20px 16px 40px;
+  padding: 20px 16px 60px;
   max-width: 480px;
   margin: 0 auto;
 }
 
 .logo-wrap {
-  width: 80px;
-  height: 80px;
+  width: 80px; height: 80px;
   border-radius: 50%;
   border: 2px solid #FFB800;
   overflow: hidden;
   margin: 0 auto 12px;
   box-shadow: 0 0 30px rgba(255,184,0,0.4);
 }
-
 .logo-wrap img { width: 100%; height: 100%; object-fit: cover; }
 
 h1 {
-  font-size: 32px;
-  font-weight: 900;
+  font-size: 32px; font-weight: 900;
   background: linear-gradient(135deg, #FFB800, #00C8FF, #FF2D9B);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-align: center;
-  margin-bottom: 4px;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; text-align: center; margin-bottom: 4px;
 }
-
 .ticker {
-  text-align: center;
-  font-size: 12px;
-  color: #FFB800;
-  letter-spacing: 4px;
-  font-weight: 700;
-  margin-bottom: 20px;
+  text-align: center; font-size: 12px; color: #FFB800;
+  letter-spacing: 4px; font-weight: 700; margin-bottom: 20px;
 }
 
 .card {
   background: #1C1C1C;
   border: 1px solid rgba(255,184,0,0.2);
-  border-radius: 16px;
-  padding: 18px;
-  margin-bottom: 14px;
+  border-radius: 16px; padding: 18px; margin-bottom: 14px;
 }
-
 .card-title {
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.35);
-  margin-bottom: 14px;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(255,255,255,0.35); margin-bottom: 14px;
 }
 
-.rate-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+.rate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rate-item .label { font-size: 10px; color: rgba(255,255,255,0.3); margin-bottom: 4px; letter-spacing: 1px; text-transform: uppercase; }
+.rate-item .value { font-size: 16px; font-weight: 800; color: #FFB800; }
+.rate-item .sub { font-size: 10px; color: rgba(255,255,255,0.3); }
+
+.progress-bar-wrap { background: rgba(255,255,255,0.07); border-radius: 50px; height: 8px; margin-bottom: 8px; overflow: hidden; }
+.progress-bar-fill { height: 100%; border-radius: 50px; background: linear-gradient(90deg, #FFB800, #00C8FF); width: 0%; transition: width 1s ease; }
+.progress-label { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.35); }
+
+/* ── WALLET CONNECT ── */
+.wallet-section { margin-bottom: 14px; }
+
+.wallet-section-title {
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(255,255,255,0.35); margin-bottom: 12px;
 }
 
-.rate-item .label {
-  font-size: 10px;
-  color: rgba(255,255,255,0.3);
-  margin-bottom: 4px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+.wallet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+
+.wallet-btn {
+  display: flex; align-items: center; gap: 10px;
+  background: #1C1C1C;
+  border: 1px solid rgba(255,184,0,0.18);
+  border-radius: 12px; padding: 12px;
+  cursor: pointer; color: #fff; font-size: 13px; font-weight: 600;
+  transition: all 0.18s; text-align: left; width: 100%;
 }
+.wallet-btn:hover { border-color: #FFB800; background: #242415; transform: translateY(-1px); }
+.wallet-btn:active { transform: scale(0.97); }
+.wallet-btn.detected { border-color: rgba(0,200,100,0.5); }
+.wallet-btn.detected .wstatus { color: #00C864 !important; }
 
-.rate-item .value {
-  font-size: 16px;
-  font-weight: 800;
-  color: #FFB800;
+.wallet-btn .wicon {
+  width: 28px; height: 28px; border-radius: 7px;
+  object-fit: contain; flex-shrink: 0; background: #111;
 }
+.wallet-btn .winfo { display: flex; flex-direction: column; min-width: 0; }
+.wallet-btn .wname { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wallet-btn .wstatus { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 2px; }
 
-.rate-item .sub {
-  font-size: 10px;
-  color: rgba(255,255,255,0.3);
+.show-more-btn {
+  width: 100%; background: transparent;
+  border: 1px dashed rgba(255,184,0,0.25);
+  border-radius: 10px; padding: 10px;
+  color: rgba(255,184,0,0.6); font-size: 12px;
+  cursor: pointer; transition: all 0.2s; margin-bottom: 10px;
 }
+.show-more-btn:hover { border-color: #FFB800; color: #FFB800; }
 
-.progress-bar-wrap {
-  background: rgba(255,255,255,0.07);
-  border-radius: 50px;
-  height: 8px;
-  margin-bottom: 8px;
-  overflow: hidden;
+.more-grid { display: none; }
+.more-grid.open { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+
+.divider {
+  display: flex; align-items: center; gap: 10px; margin: 14px 0;
 }
+.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
+.divider span { font-size: 11px; color: rgba(255,255,255,0.3); white-space: nowrap; }
 
-.progress-bar-fill {
-  height: 100%;
-  border-radius: 50px;
-  background: linear-gradient(90deg, #FFB800, #00C8FF);
-  width: 0%;
-  transition: width 1s ease;
+.manual-input-row { display: flex; gap: 8px; }
+.manual-input {
+  flex: 1; background: #111;
+  border: 1px solid rgba(255,184,0,0.25);
+  border-radius: 10px; padding: 12px 14px;
+  color: #fff; font-size: 12px; outline: none;
+  transition: border-color 0.2s;
 }
+.manual-input:focus { border-color: #FFB800; }
+.manual-input::placeholder { color: rgba(255,255,255,0.2); }
 
-.progress-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-}
-
-.btn {
-  width: 100%;
-  padding: 16px;
-  border-radius: 50px;
-  border: none;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: opacity 0.2s, transform 0.1s;
-  letter-spacing: 0.5px;
-}
-
-.btn:active { transform: scale(0.97); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.btn-gold {
-  background: linear-gradient(135deg, #FFB800, #FF8C00);
-  color: #0D0D0D;
-}
-
-.btn-outline {
-  background: transparent;
-  border: 1px solid rgba(255,184,0,0.4);
-  color: #FFB800;
-}
-
-.btn-gold:hover:not(:disabled) { opacity: 0.88; }
-.btn-outline:hover:not(:disabled) { background: rgba(255,184,0,0.08); }
-
+/* ── BUY SCREEN ── */
 .wallet-display {
   background: rgba(255,184,0,0.08);
   border: 1px solid rgba(255,184,0,0.25);
-  border-radius: 12px;
-  padding: 12px 16px;
-  font-size: 12px;
-  color: #FFB800;
-  word-break: break-all;
-  margin-bottom: 14px;
-  display: none;
+  border-radius: 12px; padding: 12px 16px;
+  font-size: 12px; color: #FFB800;
+  word-break: break-all; margin-bottom: 14px; display: none;
 }
-
 .wallet-display .wlabel {
-  font-size: 10px;
-  color: rgba(255,255,255,0.3);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 4px;
+  font-size: 10px; color: rgba(255,255,255,0.3);
+  letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px;
 }
+.wallet-display .wrow { display: flex; justify-content: space-between; align-items: center; }
+.wallet-display .wprovider { font-size: 11px; color: rgba(255,255,255,0.4); }
 
-.amount-wrap {
-  position: relative;
-  margin-bottom: 10px;
-}
-
+.amount-wrap { position: relative; margin-bottom: 10px; }
 .amount-input {
-  width: 100%;
-  background: #0D0D0D;
+  width: 100%; background: #0D0D0D;
   border: 1px solid rgba(255,184,0,0.3);
-  border-radius: 12px;
-  padding: 14px 70px 14px 18px;
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  outline: none;
+  border-radius: 12px; padding: 14px 70px 14px 18px;
+  color: #fff; font-size: 20px; font-weight: 700; outline: none;
   transition: border 0.2s;
 }
-
 .amount-input:focus { border-color: #FFB800; }
 .amount-input::placeholder { color: rgba(255,255,255,0.2); font-size: 16px; font-weight: 400; }
-
 .sol-tag {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 13px;
-  font-weight: 700;
-  color: #FFB800;
+  position: absolute; right: 16px; top: 50%;
+  transform: translateY(-50%); font-size: 13px; font-weight: 700; color: #FFB800;
 }
 
-.token-preview {
-  text-align: center;
-  font-size: 13px;
-  color: rgba(255,255,255,0.4);
-  margin-bottom: 14px;
-  min-height: 20px;
-}
+.token-preview { text-align: center; font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 14px; min-height: 20px; }
+.token-preview span { color: #00C8FF; font-weight: 700; font-size: 15px; }
 
-.token-preview span {
-  color: #00C8FF;
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.quick-btns {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
+.quick-btns { display: flex; gap: 8px; margin-bottom: 14px; }
 .quick-btn {
-  flex: 1;
-  background: rgba(255,184,0,0.08);
+  flex: 1; background: rgba(255,184,0,0.08);
   border: 1px solid rgba(255,184,0,0.2);
-  border-radius: 8px;
-  padding: 8px;
-  color: #FFB800;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.2s;
-  text-align: center;
+  border-radius: 8px; padding: 8px;
+  color: #FFB800; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: background 0.2s; text-align: center;
 }
-
 .quick-btn:hover { background: rgba(255,184,0,0.18); }
+.quick-btn.active { background: rgba(255,184,0,0.3); border-color: #FFB800; }
 
-.status-box {
-  border-radius: 12px;
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.6;
-  margin-bottom: 14px;
-  display: none;
+/* manual send info */
+.manual-send-box {
+  background: rgba(255,184,0,0.05);
+  border: 1px solid rgba(255,184,0,0.2);
+  border-radius: 12px; padding: 14px;
+  margin-top: 12px; display: none;
 }
-
-.status-success {
-  background: rgba(0,200,100,0.1);
-  border: 1px solid rgba(0,200,100,0.3);
-  color: #00C864;
+.manual-send-box.show { display: block; }
+.manual-send-box h4 { font-size: 12px; color: #FFB800; margin-bottom: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.copy-row {
+  display: flex; align-items: center; gap: 8px;
+  background: #0D0D0D; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
 }
-
-.status-error {
-  background: rgba(255,45,155,0.1);
-  border: 1px solid rgba(255,45,155,0.3);
-  color: #FF2D9B;
+.copy-row span { flex: 1; font-size: 10px; font-family: monospace; color: #00C8FF; word-break: break-all; }
+.copy-btn {
+  background: #FFB800; border: none; border-radius: 6px;
+  padding: 6px 10px; color: #0D0D0D; font-size: 11px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0;
 }
+.manual-steps { list-style: none; }
+.manual-steps li { font-size: 12px; color: rgba(255,255,255,0.4); padding: 3px 0; display: flex; gap: 6px; }
+.manual-steps li::before { content: attr(data-n); color: #FFB800; font-weight: 700; flex-shrink: 0; }
 
-.status-loading {
-  background: rgba(0,200,255,0.08);
-  border: 1px solid rgba(0,200,255,0.2);
-  color: #00C8FF;
+/* ── BUTTONS ── */
+.btn {
+  width: 100%; padding: 16px; border-radius: 50px; border: none;
+  font-size: 15px; font-weight: 800; cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s; letter-spacing: 0.5px;
 }
-
-.step-indicator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 20px;
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-gold { background: linear-gradient(135deg, #FFB800, #FF8C00); color: #0D0D0D; }
+.btn-gold:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline {
+  background: transparent; border: 1px solid rgba(255,184,0,0.4); color: #FFB800;
 }
+.btn-outline:hover:not(:disabled) { background: rgba(255,184,0,0.08); }
 
-.step-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.15);
-  transition: background 0.3s;
-}
+/* ── STATUS ── */
+.status-box { border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.6; margin-bottom: 14px; display: none; }
+.status-success { background: rgba(0,200,100,0.1); border: 1px solid rgba(0,200,100,0.3); color: #00C864; }
+.status-error { background: rgba(255,45,155,0.1); border: 1px solid rgba(255,45,155,0.3); color: #FF2D9B; }
+.status-loading { background: rgba(0,200,255,0.08); border: 1px solid rgba(0,200,255,0.2); color: #00C8FF; }
 
+/* ── STEPS ── */
+.step-indicator { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 20px; }
+.step-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.15); transition: background 0.3s; }
 .step-dot.active { background: #FFB800; }
 .step-dot.done { background: #00C864; }
 
 .screen { display: none; }
 .screen.active { display: block; }
 
-.success-icon {
-  font-size: 56px;
-  text-align: center;
-  margin-bottom: 16px;
-}
-
-.success-title {
-  font-size: 22px;
-  font-weight: 800;
-  color: #FFB800;
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.success-detail {
-  background: #1C1C1C;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 14px;
-}
-
-.success-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
+/* ── SUCCESS ── */
+.success-icon { font-size: 56px; text-align: center; margin-bottom: 16px; }
+.success-title { font-size: 22px; font-weight: 800; color: #FFB800; text-align: center; margin-bottom: 8px; }
+.success-detail { background: #1C1C1C; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.success-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .success-row:last-child { border-bottom: none; }
 .success-row .slabel { color: rgba(255,255,255,0.4); }
 .success-row .svalue { color: #FFB800; font-weight: 700; }
 
-.divider { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 16px 0; }
+.divider-line { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 16px 0; }
+
+/* spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(13,13,13,0.3); border-top-color: #0D0D0D; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -330,88 +246,77 @@ h1 {
   <div class="step-dot" id="dot3"></div>
 </div>
 
-<!-- SCREEN 1: Connect Wallet -->
+<!-- ══ SCREEN 1: Connect Wallet ══ -->
 <div class="screen active" id="screen-connect">
+
   <div class="card">
     <div class="card-title">Presale Info</div>
     <div class="rate-grid">
-      <div class="rate-item">
-        <div class="label">Price</div>
-        <div class="value">0.0001 SOL</div>
-        <div class="sub">per TKB</div>
-      </div>
-      <div class="rate-item">
-        <div class="label">Rate</div>
-        <div class="value">10,000 TKB</div>
-        <div class="sub">per 1 SOL</div>
-      </div>
-      <div class="rate-item">
-        <div class="label">Min Buy</div>
-        <div class="value">0.1 SOL</div>
-        <div class="sub">= 1,000 TKB</div>
-      </div>
-      <div class="rate-item">
-        <div class="label">Max Buy</div>
-        <div class="value">10 SOL</div>
-        <div class="sub">= 100,000 TKB</div>
-      </div>
+      <div class="rate-item"><div class="label">Price</div><div class="value">0.0001 SOL</div><div class="sub">per TKB</div></div>
+      <div class="rate-item"><div class="label">Rate</div><div class="value">10,000 TKB</div><div class="sub">per 1 SOL</div></div>
+      <div class="rate-item"><div class="label">Min Buy</div><div class="value">0.1 SOL</div><div class="sub">= 1,000 TKB</div></div>
+      <div class="rate-item"><div class="label">Max Buy</div><div class="value">10 SOL</div><div class="sub">= 100,000 TKB</div></div>
     </div>
   </div>
 
   <div class="card">
     <div class="card-title">Presale Progress</div>
-    <div class="progress-bar-wrap">
-      <div class="progress-bar-fill" id="progress-fill"></div>
-    </div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-fill"></div></div>
     <div class="progress-label">
       <span id="progress-raised">Loading...</span>
       <span id="progress-pct">0%</span>
     </div>
   </div>
 
-  <button class="btn btn-gold" id="connect-btn" onclick="connectWallet()">
-    🔗 Connect Phantom Wallet
-  </button>
+  <!-- Wallet Grid -->
+  <div class="card">
+    <div class="card-title">Connect Your Wallet</div>
 
-  <div style="margin-top:12px; text-align:center; font-size:12px; color:rgba(255,255,255,0.25);">
-    Phantom wallet required · Solana network
+    <div class="wallet-grid" id="primaryGrid"></div>
+
+    <div class="more-grid" id="moreGrid"></div>
+
+    <button class="show-more-btn" id="showMoreBtn" onclick="toggleMore()">
+      ▼ Show more wallets (300+ supported)
+    </button>
+
+    <div class="divider"><span>or paste your wallet address</span></div>
+
+    <div class="manual-input-row">
+      <input class="manual-input" id="manualAddr" type="text"
+             placeholder="Solana wallet address…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn btn-gold" style="width:auto;padding:12px 16px;font-size:13px;border-radius:10px;"
+              onclick="connectManual()">Use</button>
+    </div>
   </div>
+
 </div>
 
-<!-- SCREEN 2: Buy Tokens -->
+<!-- ══ SCREEN 2: Buy Tokens ══ -->
 <div class="screen" id="screen-buy">
+
   <div class="wallet-display" id="wallet-display">
     <div class="wlabel">Connected Wallet</div>
-    <div id="wallet-address-text">—</div>
+    <div class="wrow">
+      <div id="wallet-address-text" style="word-break:break-all;"></div>
+      <div class="wprovider" id="wallet-provider-label"></div>
+    </div>
   </div>
 
   <div class="card">
     <div class="card-title">Enter Amount</div>
-
     <div class="quick-btns">
-      <div class="quick-btn" onclick="setAmount(0.1)">0.1 SOL</div>
-      <div class="quick-btn" onclick="setAmount(0.5)">0.5 SOL</div>
+      <div class="quick-btn" onclick="setAmount(0.1)">0.1</div>
+      <div class="quick-btn" onclick="setAmount(0.5)">0.5</div>
       <div class="quick-btn" onclick="setAmount(1)">1 SOL</div>
       <div class="quick-btn" onclick="setAmount(5)">5 SOL</div>
     </div>
-
     <div class="amount-wrap">
-      <input
-        class="amount-input"
-        type="number"
-        id="sol-amount"
-        placeholder="0.00"
-        min="0.1"
-        max="10"
-        step="0.01"
-        oninput="updatePreview()"
-      >
+      <input class="amount-input" type="number" id="sol-amount"
+             placeholder="0.00" min="0.1" max="10" step="0.01" oninput="updatePreview()">
       <span class="sol-tag">SOL</span>
     </div>
-
-    <div class="token-preview" id="token-preview">
-      Enter amount to see token allocation
-    </div>
+    <div class="token-preview" id="token-preview">Enter amount to see token allocation</div>
   </div>
 
   <div class="status-box" id="status-box"></div>
@@ -420,261 +325,372 @@ h1 {
     💰 Send SOL &amp; Get Tokens
   </button>
 
+  <!-- Manual send fallback (shown when no extension) -->
+  <div class="manual-send-box" id="manualSendBox">
+    <h4>📋 Send Manually From Any Wallet</h4>
+    <p style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:10px;">
+      Open Phantom, Solflare, or any Solana app and send SOL to:
+    </p>
+    <div class="copy-row">
+      <span id="presaleAddrDisplay">GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe</span>
+      <button class="copy-btn" onclick="copyPresaleAddr()">Copy</button>
+    </div>
+    <ul class="manual-steps">
+      <li data-n="1.">Send SOL to the address above</li>
+      <li data-n="2.">Our monitor auto-detects your payment ✅</li>
+      <li data-n="3.">Or use /verify in the Telegram bot</li>
+      <li data-n="4.">Tokens airdropped after presale ends 🎉</li>
+    </ul>
+  </div>
+
   <div style="margin-top:10px;">
-    <button class="btn btn-outline" onclick="disconnectWallet()">
-      Disconnect Wallet
-    </button>
+    <button class="btn btn-outline" onclick="disconnectWallet()">Disconnect Wallet</button>
   </div>
 </div>
 
-<!-- SCREEN 3: Success -->
+<!-- ══ SCREEN 3: Success ══ -->
 <div class="screen" id="screen-success">
   <div class="success-icon">🎉</div>
   <div class="success-title">Payment Confirmed!</div>
 
   <div class="success-detail">
-    <div class="success-row">
-      <span class="slabel">SOL Sent</span>
-      <span class="svalue" id="s-sol">—</span>
-    </div>
-    <div class="success-row">
-      <span class="slabel">TKB Allocated</span>
-      <span class="svalue" id="s-tokens">—</span>
-    </div>
-    <div class="success-row">
-      <span class="slabel">Your Wallet</span>
-      <span class="svalue" id="s-wallet" style="font-size:10px; word-break:break-all;">—</span>
-    </div>
-    <div class="success-row">
-      <span class="slabel">Status</span>
-      <span class="svalue" style="color:#00C864;">✅ Confirmed</span>
-    </div>
+    <div class="success-row"><span class="slabel">SOL Sent</span><span class="svalue" id="s-sol">—</span></div>
+    <div class="success-row"><span class="slabel">TKB Allocated</span><span class="svalue" id="s-tokens">—</span></div>
+    <div class="success-row"><span class="slabel">Your Wallet</span><span class="svalue" id="s-wallet" style="font-size:10px;word-break:break-all;">—</span></div>
+    <div class="success-row"><span class="slabel">Status</span><span class="svalue" style="color:#00C864;">✅ Confirmed</span></div>
   </div>
 
-  <div style="text-align:center; font-size:13px; color:rgba(255,255,255,0.35); margin-bottom:16px; line-height:1.7;">
-    Your tokens will be airdropped to your wallet after the presale ends on <strong style="color:#FFB800;">June 6, 2026</strong>
+  <div style="text-align:center;font-size:13px;color:rgba(255,255,255,0.35);margin-bottom:16px;line-height:1.7;">
+    Your tokens will be airdropped to your wallet after the presale ends on
+    <strong style="color:#FFB800;">June 6, 2026</strong>
   </div>
 
-  <button class="btn btn-gold" onclick="buyMore()">
-    Buy More Tokens
-  </button>
+  <button class="btn btn-gold" onclick="buyMore()">Buy More Tokens</button>
 </div>
 
 <script>
+// ── CONFIG ──
 const API_BASE = window.location.origin;
 const PRESALE_WALLET = "GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe";
 const TOKENS_PER_SOL = 10000;
 const MIN_SOL = 0.1;
 const MAX_SOL = 10;
 
-let tg = window.Telegram.WebApp;
-let walletAddress = null;
-let userId = null;
-let username = null;
-
-tg.ready();
-tg.expand();
-
+// ── TELEGRAM ──
+let tg = window.Telegram?.WebApp;
+let userId = null, username = null;
+if (tg) { tg.ready(); tg.expand(); }
 try {
-  const user = tg.initDataUnsafe.user;
-  if (user) {
-    userId = String(user.id);
-    username = user.username || user.first_name || "user";
-  }
-} catch(e) {
-  userId = "webapp_user_" + Date.now();
-  username = "webapp_user";
+  const u = tg?.initDataUnsafe?.user;
+  if (u) { userId = String(u.id); username = u.username || u.first_name || "user"; }
+} catch(e) {}
+if (!userId) { userId = "webapp_" + Date.now(); username = "webapp_user"; }
+
+// ── STATE ──
+let walletAddress = null;
+let activeProvider = null;
+let providerName = "";
+let isManualMode = false;
+
+// ── WALLET DEFINITIONS ──
+const PRIMARY = [
+  { name:"Phantom",    icon:"https://raw.githubusercontent.com/solana-labs/wallet-adapter/master/packages/wallets/phantom/icon.png",    detect:()=>window.phantom?.solana?.isPhantom,   fn:connectPhantom,   url:"https://phantom.app" },
+  { name:"Solflare",   icon:"https://raw.githubusercontent.com/solana-labs/wallet-adapter/master/packages/wallets/solflare/icon.svg",   detect:()=>window.solflare?.isSolflare,          fn:connectSolflare,  url:"https://solflare.com" },
+  { name:"Backpack",   icon:"https://raw.githubusercontent.com/coral-xyz/backpack/master/assets/backpack.png",                          detect:()=>!!window.backpack,                    fn:connectBackpack,  url:"https://backpack.app" },
+  { name:"OKX Wallet", icon:"https://www.okx.com/cdn/assets/imgs/236/E274133B3A66FBFF.png",                                            detect:()=>!!window.okxwallet?.solana,           fn:()=>connectGeneric(window.okxwallet?.solana,"OKX"),  url:"https://okx.com/web3" },
+  { name:"Coin98",     icon:"https://coin98.com/favicon.ico",                                                                           detect:()=>!!window.coin98?.sol,                 fn:()=>connectGeneric(window.coin98?.sol,"Coin98"),     url:"https://coin98.com" },
+  { name:"Bitget",     icon:"https://web3.bitget.com/favicon.ico",                                                                      detect:()=>!!window.bitkeep?.solana,             fn:()=>connectGeneric(window.bitkeep?.solana,"Bitget"), url:"https://web3.bitget.com" },
+  { name:"Trust",      icon:"https://trustwallet.com/assets/images/media/assets/TWT.png",                                               detect:()=>!!window.trustwallet?.solana,         fn:()=>connectGeneric(window.trustwallet?.solana,"Trust"), url:"https://trustwallet.com" },
+  { name:"Exodus",     icon:"https://www.exodus.com/img/logo/exodus-logo.png",                                                          detect:()=>!!window.exodus?.solana,              fn:()=>connectGeneric(window.exodus?.solana,"Exodus"),  url:"https://exodus.com" },
+];
+
+const MORE = [
+  { name:"Glow",        icon:"https://glow.app/images/logo/logo.png",                          detect:()=>!!window.glow,                         fn:()=>connectGeneric(window.glow,"Glow"),              url:"https://glow.app" },
+  { name:"Math",        icon:"https://mathwallet.org/favicon.ico",                             detect:()=>window.solana?.isMathWallet,            fn:()=>connectGeneric(window.solana,"MathWallet"),      url:"https://mathwallet.org" },
+  { name:"Safepal",     icon:"https://www.safepal.com/favicon.ico",                            detect:()=>!!window.safepal?.solana,               fn:()=>connectGeneric(window.safepal?.solana,"Safepal"),url:"https://safepal.com" },
+  { name:"Clover",      icon:"https://clover.finance/favicon.ico",                             detect:()=>!!window.clover_solana,                 fn:()=>connectGeneric(window.clover_solana,"Clover"),   url:"https://clover.finance" },
+  { name:"Slope",       icon:"https://slope.finance/icons/favicon-192.png",                    detect:()=>!!window.Slope,                         fn:connectSlope,                                        url:"https://slope.finance" },
+  { name:"Brave",       icon:"https://brave.com/static-assets/images/brave-logo-full-color.svg",detect:()=>!!window.braveSolana,                  fn:()=>connectGeneric(window.braveSolana,"Brave"),      url:"https://brave.com" },
+  { name:"TokenPocket", icon:"https://www.tokenpocket.pro/favicon.ico",                        detect:()=>window.solana?.isTokenPocket,           fn:()=>connectGeneric(window.solana,"TokenPocket"),     url:"https://tokenpocket.pro" },
+  { name:"Onto",        icon:"https://onto.app/favicon.ico",                                   detect:()=>!!window.onto?.solana,                  fn:()=>connectGeneric(window.onto?.solana,"Onto"),      url:"https://onto.app" },
+  { name:"XDEFI",       icon:"https://www.xdefi.io/favicon.ico",                               detect:()=>!!window.xfi?.solana,                   fn:()=>connectGeneric(window.xfi?.solana,"XDEFI"),      url:"https://xdefi.io" },
+  { name:"Nightly",     icon:"https://nightly.app/favicon.ico",                                detect:()=>!!window.nightly?.solana,               fn:()=>connectGeneric(window.nightly?.solana,"Nightly"),url:"https://nightly.app" },
+  { name:"HyperPay",    icon:"https://hyperpay.io/favicon.ico",                                detect:()=>!!window.hyperpay?.solana,              fn:()=>connectGeneric(window.hyperpay?.solana,"HyperPay"),url:"https://hyperpay.io" },
+  { name:"Spot",        icon:"https://spot-wallet.com/favicon.ico",                            detect:()=>!!window.spot?.solana,                  fn:()=>connectGeneric(window.spot?.solana,"Spot"),      url:"https://spot-wallet.com" },
+];
+
+// ── BUILD GRIDS ──
+function buildGrid(wallets, el) {
+  el.innerHTML = "";
+  wallets.forEach(w => {
+    const detected = !!w.detect();
+    const btn = document.createElement("button");
+    btn.className = "wallet-btn" + (detected ? " detected" : "");
+    btn.innerHTML = `
+      <img class="wicon" src="${w.icon}" alt="${w.name}"
+           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2228%22 height=%2228%22><rect width=%2228%22 height=%2228%22 rx=%226%22 fill=%22%23222%22/><text x=%2214%22 y=%2220%22 text-anchor=%22middle%22 font-size=%2214%22>💼</text></svg>'"/>
+      <div class="winfo">
+        <div class="wname">${w.name}</div>
+        <div class="wstatus">${detected ? "✓ Detected" : "Tap to install"}</div>
+      </div>`;
+    btn.onclick = () => detected ? w.fn() : (window.open(w.url,"_blank"), showMsg("Opening install page for " + w.name + ". You can also paste your address below.", "info"));
+    el.appendChild(btn);
+  });
 }
 
-// Load presale info
+function toggleMore() {
+  const g = document.getElementById("moreGrid");
+  const b = document.getElementById("showMoreBtn");
+  const open = g.classList.toggle("open");
+  b.textContent = open ? "▲ Show fewer wallets" : "▼ Show more wallets (300+ supported)";
+}
+
+// ── CONNECT FUNCTIONS ──
+async function connectPhantom() {
+  const p = window.phantom?.solana;
+  if (!p?.isPhantom) { window.open("https://phantom.app","_blank"); showMsg("Phantom not found — opening install page. You can also paste your address below.", "info"); return; }
+  try {
+    showMsg("Connecting to Phantom…", "loading");
+    const r = await p.connect();
+    activeProvider = p; providerName = "Phantom";
+    onConnected(r.publicKey.toString());
+  } catch(e) { showMsg("Phantom: connection cancelled.", "error"); }
+}
+
+async function connectSolflare() {
+  const p = window.solflare;
+  if (!p?.isSolflare) { window.open("https://solflare.com","_blank"); showMsg("Solflare not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Solflare…", "loading");
+    await p.connect();
+    activeProvider = p; providerName = "Solflare";
+    onConnected(p.publicKey.toString());
+  } catch(e) { showMsg("Solflare: connection cancelled.", "error"); }
+}
+
+async function connectBackpack() {
+  const p = window.backpack;
+  if (!p) { window.open("https://backpack.app","_blank"); showMsg("Backpack not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Backpack…", "loading");
+    await p.connect();
+    activeProvider = p; providerName = "Backpack";
+    onConnected(p.publicKey.toString());
+  } catch(e) { showMsg("Backpack: connection cancelled.", "error"); }
+}
+
+async function connectSlope() {
+  const S = window.Slope;
+  if (!S) { window.open("https://slope.finance","_blank"); showMsg("Slope not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Slope…", "loading");
+    const slope = new S();
+    const { data } = await slope.connect();
+    activeProvider = slope; providerName = "Slope";
+    onConnected(data.publicKey);
+  } catch(e) { showMsg("Slope: connection cancelled.", "error"); }
+}
+
+async function connectGeneric(provider, name) {
+  if (!provider) { showMsg(name + " not detected on this device.", "error"); return; }
+  try {
+    showMsg("Connecting to " + name + "…", "loading");
+    await provider.connect();
+    const addr = provider.publicKey?.toString() || provider.accounts?.[0]?.address;
+    if (!addr) throw new Error("Could not get address");
+    activeProvider = provider; providerName = name;
+    onConnected(addr);
+  } catch(e) { showMsg(name + ": " + (e.message || "connection cancelled."), "error"); }
+}
+
+function connectManual() {
+  const v = document.getElementById("manualAddr").value.trim();
+  if (!isValidSolAddr(v)) { showMsg("Invalid Solana address. Please check and try again.", "error"); return; }
+  activeProvider = null; providerName = "Manual"; isManualMode = true;
+  onConnected(v);
+}
+
+function isValidSolAddr(a) {
+  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  return a.length >= 32 && a.length <= 44 && [...a].every(c => chars.includes(c));
+}
+
+// ── ON CONNECTED ──
+function onConnected(address) {
+  walletAddress = address;
+  const short = address.slice(0,6) + "…" + address.slice(-6);
+  document.getElementById("wallet-address-text").textContent = short;
+  document.getElementById("wallet-provider-label").textContent = providerName;
+  document.getElementById("wallet-display").style.display = "block";
+
+  // Show manual-send box if no extension
+  if (isManualMode) {
+    document.getElementById("manualSendBox").classList.add("show");
+    document.getElementById("buy-btn").style.display = "none";
+  }
+
+  showScreen("buy");
+}
+
+function disconnectWallet() {
+  try { activeProvider?.disconnect?.(); } catch(e) {}
+  walletAddress = null; activeProvider = null; providerName = ""; isManualMode = false;
+  document.getElementById("wallet-display").style.display = "none";
+  document.getElementById("manualSendBox").classList.remove("show");
+  document.getElementById("buy-btn").style.display = "";
+  document.getElementById("manualAddr").value = "";
+  hideStatus();
+  showScreen("connect");
+}
+
+// ── BUY FORM ──
+function setAmount(val) {
+  document.getElementById("sol-amount").value = val;
+  updatePreview();
+  document.querySelectorAll(".quick-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".quick-btn").forEach(b => {
+    if (b.textContent.trim().startsWith(val)) b.classList.add("active");
+  });
+}
+
+function updatePreview() {
+  const sol = parseFloat(document.getElementById("sol-amount").value);
+  const el = document.getElementById("token-preview");
+  if (!sol || isNaN(sol) || sol <= 0) { el.innerHTML = "Enter amount to see token allocation"; return; }
+  if (sol < MIN_SOL) { el.innerHTML = '<span style="color:#FF2D9B">Minimum is ' + MIN_SOL + " SOL</span>"; return; }
+  if (sol > MAX_SOL) { el.innerHTML = '<span style="color:#FF2D9B">Maximum is ' + MAX_SOL + " SOL</span>"; return; }
+  el.innerHTML = "You will receive <span>" + Math.floor(sol * TOKENS_PER_SOL).toLocaleString() + " TKB</span>";
+}
+
+// ── SEND TRANSACTION ──
+async function sendTransaction() {
+  const sol = parseFloat(document.getElementById("sol-amount").value);
+  if (!sol || isNaN(sol) || sol < MIN_SOL || sol > MAX_SOL) {
+    showStatus("error", "Please enter a valid amount between " + MIN_SOL + " and " + MAX_SOL + " SOL"); return;
+  }
+  if (!walletAddress) { showStatus("error", "Please connect your wallet first."); return; }
+  if (isManualMode) { showStatus("info", "You are using manual mode — send SOL using the address in the box below."); document.getElementById("manualSendBox").classList.add("show"); return; }
+  if (!activeProvider) { showStatus("error", "No wallet provider detected."); return; }
+
+  const btn = document.getElementById("buy-btn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Processing…';
+  hideStatus(); showStatus("loading", "⏳ Preparing transaction…");
+
+  try {
+    const conn = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com","confirmed");
+    const from = new solanaWeb3.PublicKey(walletAddress);
+    const to   = new solanaWeb3.PublicKey(PRESALE_WALLET);
+    const lamports = Math.round(sol * 1_000_000_000);
+
+    const tx = new solanaWeb3.Transaction().add(
+      solanaWeb3.SystemProgram.transfer({ fromPubkey:from, toPubkey:to, lamports })
+    );
+    const { blockhash } = await conn.getLatestBlockhash();
+    tx.recentBlockhash = blockhash; tx.feePayer = from;
+
+    showStatus("loading", "⏳ Please approve the transaction in your wallet…");
+
+    let txSig;
+    if (activeProvider.signAndSendTransaction) {
+      const r = await activeProvider.signAndSendTransaction(tx);
+      txSig = r.signature || r;
+    } else if (activeProvider.sendTransaction) {
+      txSig = await activeProvider.sendTransaction(tx, conn);
+    } else {
+      const signed = await activeProvider.signTransaction(tx);
+      const raw = signed.serialize();
+      txSig = await conn.sendRawTransaction(raw);
+    }
+    if (typeof txSig === "object") txSig = txSig.signature || txSig.toString();
+
+    showStatus("loading", "⏳ Confirming on Solana blockchain…");
+    await conn.confirmTransaction(txSig, "confirmed");
+
+    showStatus("loading", "⏳ Recording your allocation…");
+    const vRes = await fetch(API_BASE + "/presale/verify", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ tx_signature:txSig, wallet:walletAddress, user_id:userId, username })
+    });
+    const vData = await vRes.json();
+    if (!vRes.ok) throw new Error(vData.detail || "Verification failed");
+
+    document.getElementById("s-sol").textContent = sol.toFixed(4) + " SOL";
+    document.getElementById("s-tokens").textContent = (vData.tokens_allocated||Math.floor(sol*TOKENS_PER_SOL)).toLocaleString() + " TKB";
+    document.getElementById("s-wallet").textContent = walletAddress;
+    showScreen("success");
+
+  } catch(e) {
+    const msg = e.message || "";
+    if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("reject")) {
+      showStatus("error", "Transaction cancelled.");
+    } else {
+      showStatus("error", "❌ " + msg.slice(0,120));
+      document.getElementById("manualSendBox").classList.add("show");
+    }
+  } finally {
+    btn.disabled = false; btn.innerHTML = "💰 Send SOL &amp; Get Tokens";
+  }
+}
+
+// ── UTILS ──
+function copyPresaleAddr() {
+  const addr = "GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe";
+  navigator.clipboard?.writeText(addr).catch(()=>{});
+  showMsg("Presale wallet address copied! ✅", "success");
+}
+
+let msgTimer;
+function showMsg(msg, type) {
+  const box = document.getElementById("status-box");
+  box.className = "status-box status-" + type;
+  box.innerHTML = msg; box.style.display = "block";
+  clearTimeout(msgTimer);
+  if (type !== "loading") msgTimer = setTimeout(()=>{ box.style.display="none"; }, 5000);
+}
+function showStatus(type, msg) { showMsg(msg, type); }
+function hideStatus() { document.getElementById("status-box").style.display = "none"; }
+
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-" + name).classList.add("active");
+  const names = ["connect","buy","success"], idx = names.indexOf(name);
+  ["dot1","dot2","dot3"].forEach((id,i)=>{
+    const d = document.getElementById(id);
+    d.classList.remove("active","done");
+    if (i < idx) d.classList.add("done");
+    else if (i === idx) d.classList.add("active");
+  });
+  window.scrollTo(0,0);
+}
+
+function buyMore() {
+  document.getElementById("sol-amount").value = "";
+  document.getElementById("token-preview").innerHTML = "Enter amount to see token allocation";
+  hideStatus(); loadPresaleInfo(); showScreen("buy");
+}
+
+// ── PRESALE INFO ──
 async function loadPresaleInfo() {
   try {
     const res = await fetch(API_BASE + "/presale/info");
     const data = await res.json();
-    const pct = Math.min(data.progress_percent, 100);
+    const pct = Math.min(data.progress_percent || 0, 100);
     document.getElementById("progress-fill").style.width = pct + "%";
     document.getElementById("progress-raised").textContent =
-      data.total_raised_sol.toFixed(2) + " / " + data.hard_cap_sol + " SOL raised";
+      (data.total_raised_sol||0).toFixed(2) + " / " + (data.hard_cap_sol||1000) + " SOL raised";
     document.getElementById("progress-pct").textContent = pct.toFixed(1) + "%";
   } catch(e) {
     document.getElementById("progress-raised").textContent = "Could not load stats";
   }
 }
 
-loadPresaleInfo();
-
-function showScreen(name) {
-  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
-  document.getElementById("screen-" + name).classList.add("active");
-  const dots = ["dot1","dot2","dot3"];
-  const screens = ["connect","buy","success"];
-  const idx = screens.indexOf(name);
-  dots.forEach((d, i) => {
-    const el = document.getElementById(d);
-    el.classList.remove("active","done");
-    if (i < idx) el.classList.add("done");
-    else if (i === idx) el.classList.add("active");
-  });
-}
-
-async function connectWallet() {
-  const btn = document.getElementById("connect-btn");
-  btn.textContent = "Connecting...";
-  btn.disabled = true;
-
-  try {
-    const phantom = window.phantom?.solana;
-    if (!phantom || !phantom.isPhantom) {
-      alert("Phantom wallet not found!\n\nPlease open this app inside Telegram on a device with Phantom installed, or use Phantom's in-app browser.");
-      btn.textContent = "🔗 Connect Phantom Wallet";
-      btn.disabled = false;
-      return;
-    }
-
-    const resp = await phantom.connect();
-    walletAddress = resp.publicKey.toString();
-
-    document.getElementById("wallet-address-text").textContent = walletAddress;
-    document.getElementById("wallet-display").style.display = "block";
-
-    showScreen("buy");
-    btn.textContent = "🔗 Connect Phantom Wallet";
-    btn.disabled = false;
-
-  } catch(e) {
-    showStatus("error", "Connection cancelled or failed. Please try again.");
-    btn.textContent = "🔗 Connect Phantom Wallet";
-    btn.disabled = false;
-  }
-}
-
-function disconnectWallet() {
-  try { window.phantom?.solana?.disconnect(); } catch(e) {}
-  walletAddress = null;
-  showScreen("connect");
-}
-
-function setAmount(val) {
-  document.getElementById("sol-amount").value = val;
-  updatePreview();
-}
-
-function updatePreview() {
-  const sol = parseFloat(document.getElementById("sol-amount").value);
-  const preview = document.getElementById("token-preview");
-  if (!sol || isNaN(sol) || sol <= 0) {
-    preview.innerHTML = "Enter amount to see token allocation";
-    return;
-  }
-  if (sol < MIN_SOL) {
-    preview.innerHTML = '<span style="color:#FF2D9B">Minimum is ' + MIN_SOL + ' SOL</span>';
-    return;
-  }
-  if (sol > MAX_SOL) {
-    preview.innerHTML = '<span style="color:#FF2D9B">Maximum is ' + MAX_SOL + ' SOL</span>';
-    return;
-  }
-  const tokens = Math.floor(sol * TOKENS_PER_SOL);
-  preview.innerHTML = "You will receive <span>" + tokens.toLocaleString() + " TKB</span>";
-}
-
-function showStatus(type, msg) {
-  const box = document.getElementById("status-box");
-  box.className = "status-box status-" + type;
-  box.innerHTML = msg;
-  box.style.display = "block";
-}
-
-function hideStatus() {
-  document.getElementById("status-box").style.display = "none";
-}
-
-async function sendTransaction() {
-  const sol = parseFloat(document.getElementById("sol-amount").value);
-  if (!sol || isNaN(sol) || sol < MIN_SOL || sol > MAX_SOL) {
-    showStatus("error", "Please enter a valid amount between " + MIN_SOL + " and " + MAX_SOL + " SOL");
-    return;
-  }
-
-  if (!walletAddress) {
-    showStatus("error", "Please connect your wallet first");
-    return;
-  }
-
-  const btn = document.getElementById("buy-btn");
-  btn.disabled = true;
-  btn.textContent = "Processing...";
-  hideStatus();
-  showStatus("loading", "⏳ Preparing transaction...");
-
-  try {
-    const phantom = window.phantom?.solana;
-    if (!phantom) throw new Error("Phantom not available");
-
-    const connection = new solanaWeb3.Connection(
-      "https://api.mainnet-beta.solana.com", "confirmed"
-    );
-
-    const fromPubkey = new solanaWeb3.PublicKey(walletAddress);
-    const toPubkey = new solanaWeb3.PublicKey(PRESALE_WALLET);
-    const lamports = Math.round(sol * 1_000_000_000);
-
-    const transaction = new solanaWeb3.Transaction().add(
-      solanaWeb3.SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
-    );
-
-    const { blockhash } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = fromPubkey;
-
-    showStatus("loading", "⏳ Please approve the transaction in Phantom...");
-
-    const signed = await phantom.signAndSendTransaction(transaction);
-    const txSig = signed.signature;
-
-    showStatus("loading", "⏳ Confirming on Solana blockchain...");
-    await connection.confirmTransaction(txSig, "confirmed");
-
-    showStatus("loading", "⏳ Recording your allocation...");
-
-    const verifyRes = await fetch(API_BASE + "/presale/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tx_signature: txSig,
-        wallet: walletAddress,
-        user_id: userId,
-        username: username
-      })
-    });
-
-    const verifyData = await verifyRes.json();
-
-    if (!verifyRes.ok) {
-      throw new Error(verifyData.detail || "Verification failed");
-    }
-
-    document.getElementById("s-sol").textContent = sol.toFixed(4) + " SOL";
-    document.getElementById("s-tokens").textContent = verifyData.tokens_allocated.toLocaleString() + " TKB";
-    document.getElementById("s-wallet").textContent = walletAddress;
-
-    showScreen("success");
-
-  } catch(e) {
-    showStatus("error", "❌ " + (e.message || "Transaction failed. Please try again."));
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "💰 Send SOL & Get Tokens";
-  }
-}
-
-function buyMore() {
-  document.getElementById("sol-amount").value = "";
-  document.getElementById("token-preview").innerHTML = "Enter amount to see token allocation";
-  hideStatus();
+// ── INIT ──
+document.addEventListener("DOMContentLoaded", () => {
+  buildGrid(PRIMARY, document.getElementById("primaryGrid"));
+  buildGrid(MORE, document.getElementById("moreGrid"));
   loadPresaleInfo();
-  showScreen("buy");
-}
+  setInterval(loadPresaleInfo, 30000);
+});
 </script>
 </body>
 </html>
