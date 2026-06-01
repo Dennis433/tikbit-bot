@@ -379,11 +379,15 @@ async def sent_sol_callback(update, context):
         )
     else:
         await q.message.reply_text(
-            f"⏳ *No new payment detected yet.*\n\n"
-            f"Make sure you sent SOL *from* this wallet:\n`{wallet}`\n\n"
-            f"*To* the presale wallet:\n`{config.PRESALE_WALLET}`\n\n"
-            f"Transactions can take 30–60 seconds to confirm on Solana. "
-            f"Our monitor will detect it automatically — you'll get a notification here when it arrives.",
+            f"⏳ *No payment detected yet.*\n\n"
+            f"✅ *Step 1:* Your registered wallet:\n`{wallet}`\n\n"
+            f"✅ *Step 2:* Send SOL *from that wallet* to:\n`{config.PRESALE_WALLET}`\n\n"
+            f"✅ *Step 3:* Tap *Check Again* below\n\n"
+            f"⚠️ *Common mistakes:*\n"
+            f"• Sending from a *different* wallet than registered\n"
+            f"• Sending less than *{config.MIN_BUY_SOL} SOL* (minimum)\n"
+            f"• Transaction not confirmed yet (wait 30s)\n\n"
+            f"💡 Tap *Check Again* after sending — we'll scan your full history.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Check Again", callback_data="sent_sol")],
@@ -394,47 +398,102 @@ async def sent_sol_callback(update, context):
 
 async def check_wallet_for_payment(user_id, username, wallet: str) -> dict:
     """
-    Scan recent transactions to the presale wallet.
-    Look for one sent FROM the user's registered wallet.
-    Returns dict: found, amount_sol, tokens, tx_sig, sent, already_recorded
+    Scan for payments from a user's wallet to the presale wallet.
+    Strategy:
+      1. Check DB first — already recorded?
+      2. Scan last 100 txs on presale wallet (covers old transactions)
+      3. Also scan sender wallet's own tx history for any tx to presale wallet
     """
     result = {"found": False, "already_recorded": False,
               "amount_sol": 0, "tokens": 0, "tx_sig": "", "sent": False}
     try:
-        recent = solana_utils.get_recent_transactions(30)
+        # Step 1: Check if already in DB by wallet
+        import sqlite3
+        conn = sqlite3.connect("presale.db")
+        row = conn.execute(
+            "SELECT tx_signature, amount_sol, tokens_allocated FROM contributions WHERE wallet=?",
+            (wallet,)
+        ).fetchone()
+        conn.close()
+        if row:
+            result["already_recorded"] = True
+            result["tx_sig"] = row[0]
+            result["amount_sol"] = row[1]
+            result["tokens"] = row[2]
+            return result
+
+        # Step 2: Scan last 100 txs on presale wallet
+        sigs_to_check = []
+        recent = solana_utils.get_recent_transactions(100)
         for tx_info in recent:
-            sig = tx_info["signature"]
-            # Already in DB — user's payment was previously recorded
+            sigs_to_check.append(tx_info["signature"])
+
+        # Step 3: Also scan the SENDER's own tx history
+        # This catches old transactions the monitor missed
+        try:
+            sender_txs = solana_utils._rpc({
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getSignaturesForAddress",
+                "params": [wallet, {"limit": 20}]
+            })
+            if sender_txs and sender_txs.get("result"):
+                for tx_info in sender_txs["result"]:
+                    sig = tx_info["signature"]
+                    if sig not in sigs_to_check:
+                        sigs_to_check.append(sig)
+        except Exception as e:
+            logger.warning(f"Sender tx scan failed: {e}")
+
+        # Process all collected signatures
+        for sig in sigs_to_check:
             if db.tx_exists(sig):
-                # Check if it belongs to this wallet
-                parsed = solana_utils.get_sender_from_tx(sig)
-                if parsed["success"] and parsed["sender"] == wallet:
+                # Check if it's this user's tx
+                import sqlite3
+                conn = sqlite3.connect("presale.db")
+                row = conn.execute(
+                    "SELECT amount_sol, tokens_allocated FROM contributions WHERE tx_signature=? AND wallet=?",
+                    (sig, wallet)
+                ).fetchone()
+                conn.close()
+                if row:
                     result["already_recorded"] = True
+                    result["tx_sig"] = sig
+                    result["amount_sol"] = row[0]
+                    result["tokens"] = row[1]
                     return result
                 continue
-            # Parse this tx
+
             parsed = solana_utils.get_sender_from_tx(sig)
             if not parsed["success"]:
                 continue
             if parsed["sender"] != wallet:
                 continue
-            # This is the user's payment — process it
+
+            # Found matching payment — process it
             amount_sol = parsed["amount_sol"]
             tokens = amount_sol / config.PRESALE_PRICE_SOL
-            saved = db.add_contribution(
-                str(user_id), username, wallet, amount_sol, sig
-            )
+
+            saved = db.add_contribution(str(user_id), username, wallet, amount_sol, sig)
             if not saved:
-                # add_contribution returns False if tx already exists (race condition)
                 result["already_recorded"] = True
                 return result
+
+            logger.info(f"Manual check found TX {sig[:20]} | {amount_sol} SOL | {int(tokens):,} TKB")
+
             tr = solana_utils.send_tokens(wallet, tokens)
+            if not tr["success"]:
+                # Retry once
+                import asyncio
+                await asyncio.sleep(3)
+                tr = solana_utils.send_tokens(wallet, tokens)
+
             result["found"] = True
             result["amount_sol"] = amount_sol
             result["tokens"] = tokens
             result["tx_sig"] = sig
             result["sent"] = tr["success"]
             return result
+
     except Exception as e:
         logger.error(f"check_wallet_for_payment error: {e}")
     return result
