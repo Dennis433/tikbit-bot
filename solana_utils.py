@@ -267,8 +267,13 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     """
     result = {"success": False, "tx_signature": None, "message": ""}
 
-    if not config.AIRDROP_PRIVATE_KEY:
-        logger.warning(f"[QUEUED] {recipient_wallet} → {int(amount_tokens):,} TKB — set AIRDROP_PRIVATE_KEY")
+    # Debug: log key status without exposing the key
+    key = config.AIRDROP_PRIVATE_KEY
+    logger.info(f"send_tokens called: {int(amount_tokens):,} TKB → {recipient_wallet[:12]}...")
+    logger.info(f"AIRDROP_PRIVATE_KEY set: {bool(key)} | length: {len(key) if key else 0}")
+
+    if not key:
+        logger.error("AIRDROP_PRIVATE_KEY is not set! Tokens queued.")
         result["success"]      = True
         result["tx_signature"] = "QUEUED"
         result["message"]      = f"✅ {int(amount_tokens):,} TKB queued — set AIRDROP_PRIVATE_KEY on Render"
