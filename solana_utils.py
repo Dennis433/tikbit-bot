@@ -208,9 +208,15 @@ def get_sender_from_tx(tx_signature: str) -> dict:
         if amount_sol < config.MIN_BUY_SOL:
             return result
 
+        # Sender is the fee payer (index 0)
+        # Skip if sender is the presale wallet itself (internal tx)
         sender = addresses[0]
         if sender == config.PRESALE_WALLET:
-            return result
+            # Try index 1 as sender (some wallet types)
+            if len(addresses) > 1:
+                sender = addresses[1]
+            else:
+                return result
 
         result["sender"]     = sender
         result["amount_sol"] = amount_sol
