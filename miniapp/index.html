@@ -87,6 +87,21 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
 .modal.show{display:flex}
+.sent-btn{width:100%;padding:16px;border-radius:50px;border:2px solid #FFB800;background:rgba(255,184,0,0.1);color:#FFB800;font-size:15px;font-weight:800;cursor:pointer;transition:all 0.2s;margin-top:10px;letter-spacing:0.5px}
+.sent-btn:hover{background:rgba(255,184,0,0.2)}
+.sent-btn:active{transform:scale(0.97)}
+.sent-btn:disabled{opacity:0.5;cursor:not-allowed}
+.check-card{background:#1C1C1C;border:1px solid rgba(255,184,0,0.2);border-radius:16px;padding:20px;margin-top:12px;display:none;text-align:center}
+.check-card.show{display:block}
+.check-status{font-size:14px;color:rgba(255,255,255,0.6);margin:12px 0;line-height:1.7}
+.check-status.found{color:#00C864}
+.check-status.not-found{color:#FFB800}
+.check-status.error{color:#FF2D9B}
+.pulse{display:inline-block;animation:pulse-anim 1.2s ease-in-out infinite}
+@keyframes pulse-anim{0%,100%{opacity:1}50%{opacity:0.3}}
+.tx-detail{background:#111;border-radius:10px;padding:12px;margin:10px 0;font-size:11px;font-family:monospace;color:#00C8FF;word-break:break-all;text-align:left}
+.retry-row{display:flex;gap:8px;margin-top:10px}
+.retry-row .btn{font-size:13px;padding:12px}
 .modal-box{background:#1C1C1C;border:1px solid rgba(255,184,0,0.4);border-radius:16px;padding:24px;max-width:360px;width:100%;text-align:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(13,13,13,0.3);border-top-color:#0D0D0D;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
@@ -169,6 +184,23 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
       <li><b>3.</b> Or use /verify in the Telegram bot</li>
     </ul>
   </div>
+  <!-- I've Sent SOL button (shown for manual sends) -->
+  <button class="sent-btn" id="sent-btn" onclick="iSentSol()" style="display:none">
+    &#9989; I&#39;ve Sent SOL &#8212; Check My Payment
+  </button>
+
+  <!-- Checking status card -->
+  <div class="check-card" id="check-card">
+    <div id="check-icon" style="font-size:36px;margin-bottom:8px">&#128269;</div>
+    <div id="check-title" style="font-size:15px;font-weight:800;color:#FFB800;margin-bottom:6px">Scanning blockchain...</div>
+    <div class="check-status" id="check-status"><span class="pulse">&#9679;</span> Looking for your transaction...</div>
+    <div class="tx-detail" id="check-tx" style="display:none"></div>
+    <div class="retry-row" id="retry-row" style="display:none">
+      <button class="btn btn-gold" style="font-size:13px;padding:12px" onclick="iSentSol()">&#128260; Check Again</button>
+      <button class="btn btn-outline" style="font-size:13px;padding:12px" onclick="hideCheckCard()">&#10005; Close</button>
+    </div>
+  </div>
+
   <div style="margin-top:10px">
     <button class="btn btn-outline" onclick="disconnect()">Disconnect Wallet</button>
   </div>
@@ -182,12 +214,35 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
     <div class="srow"><span class="slbl">SOL Sent</span><span class="sval" id="s-sol">-</span></div>
     <div class="srow"><span class="slbl">TKB Allocated</span><span class="sval" id="s-tkb">-</span></div>
     <div class="srow"><span class="slbl">Wallet</span><span class="sval" id="s-wallet" style="font-size:10px">-</span></div>
-    <div class="srow"><span class="slbl">Status</span><span class="sval" style="color:#00C864">&#9989; Confirmed</span></div>
+    <div class="srow"><span class="slbl">Status</span><span class="sval" id="s-status-text" style="color:#00C864">&#9989; Confirmed</span></div>
+    <div class="srow" id="s-tx-row" style="display:none"><span class="slbl">TX</span><span class="sval" id="s-tx" style="font-size:10px">-</span></div>
   </div>
   <p style="text-align:center;font-size:13px;color:rgba(255,255,255,0.35);margin-bottom:16px;line-height:1.7">
     Tokens airdropped to your wallet after presale ends <strong style="color:#FFB800">June 6, 2026</strong>
   </p>
   <button class="btn btn-gold" onclick="buyMore()">Buy More Tokens</button>
+</div>
+
+<!-- Mobile wallet modal -->
+<div class="modal" id="mobile-modal">
+  <div class="modal-box">
+    <img id="mob-wallet-icon" width="48" height="48" style="border-radius:12px;margin-bottom:12px" src="" alt="">
+    <div style="font-size:15px;font-weight:800;color:#FFB800;margin-bottom:10px">Open in <span id="mob-wallet-name">Wallet</span></div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);line-height:1.7;margin-bottom:14px">
+      To connect on mobile, open this page inside your wallet app:<br><br>
+      <strong style="color:#fff">1.</strong> Open your <span id="mob-wallet-name2"></span> app<br>
+      <strong style="color:#fff">2.</strong> Tap <strong style="color:#FFB800">Explore / Browser</strong> tab<br>
+      <strong style="color:#fff">3.</strong> Paste this URL and open it:<br>
+    </div>
+    <div class="copy-row" style="margin-bottom:14px">
+      <span id="mob-url-display" style="flex:1;font-size:10px;font-family:monospace;color:#00C8FF;word-break:break-all;text-align:left"></span>
+      <button class="copy-btn" id="mob-copy-btn" onclick="copyMobUrl()">Copy URL</button>
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.3);margin-bottom:16px">
+      Or just paste your wallet address in the field below — no app needed.
+    </div>
+    <button class="btn btn-gold" style="margin-bottom:8px" onclick="closeMobileModal()">Got it</button>
+  </div>
 </div>
 
 <!-- Desktop modal -->
@@ -315,9 +370,13 @@ function toggleMore() {
 
 // ── WALLET ACTION ──
 function handleWallet(w) {
+  // Already inside wallet browser OR extension detected -> connect directly
   if (w.has()) { w.conn(); return; }
-  if (IS_MOBILE && w.mob) { window.location.href = w.mob; return; }
-  if (IN_TELEGRAM && !IS_MOBILE) { showDesktopModal(w.n); return; }
+  // Mobile (any browser including Telegram) -> show "open in wallet browser" modal
+  if (IS_MOBILE) { showMobileModal(w); return; }
+  // Desktop Telegram -> copy URL modal
+  if (IN_TELEGRAM) { showDesktopModal(w.n); return; }
+  // Desktop real browser, not installed -> install page
   window.open(w.inst, "_blank");
   showStatus("info", "Opening " + w.n + " install page. Or paste your address below.");
 }
@@ -499,6 +558,28 @@ function copyModalUrl() {
 }
 
 // ── DESKTOP MODAL ──
+function showMobileModal(w) {
+  // Phantom official docs: on mobile, users MUST open dApps via the
+  // wallet's built-in browser (Explore tab). Deep links to phantom.app/ul/browse
+  // only work if Phantom is set as default browser handler, which is unreliable.
+  // Best UX: show the URL + clear instructions to open it inside Phantom.
+  var m = document.getElementById("mobile-modal");
+  document.getElementById("mob-wallet-name").textContent = w.n;
+  document.getElementById("mob-wallet-icon").src = w.ic;
+  document.getElementById("mob-url-display").textContent = window.location.href;
+  document.getElementById("mob-copy-btn").textContent = "Copy URL";
+  m.classList.add("show");
+}
+function closeMobileModal() {
+  document.getElementById("mobile-modal").classList.remove("show");
+}
+function copyMobUrl() {
+  var url = window.location.href;
+  if (navigator.clipboard) { navigator.clipboard.writeText(url).catch(function(){}); }
+  else { var t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t); }
+  document.getElementById("mob-copy-btn").textContent = "Copied!";
+}
+
 function showDesktopModal(name) {
   document.getElementById("modal-wallet-name").textContent = name;
   document.getElementById("modal-url").textContent = PAGE;
@@ -540,6 +621,138 @@ document.addEventListener("DOMContentLoaded", function() {
   loadInfo();
   setInterval(loadInfo, 30000);
 });
+
+// ── I'VE SENT SOL — PAYMENT CHECKER ──
+
+var checkTimer = null;
+var checkAttempts = 0;
+var MAX_ATTEMPTS = 6; // 6 attempts × 10s = 1 minute total
+
+function showSentBtn() {
+  var btn = document.getElementById("sent-btn");
+  if (btn) btn.style.display = "block";
+}
+
+function hideCheckCard() {
+  document.getElementById("check-card").classList.remove("show");
+  document.getElementById("retry-row").style.display = "none";
+  document.getElementById("check-tx").style.display = "none";
+  checkAttempts = 0;
+}
+
+async function iSentSol() {
+  if (!connectedAddr) {
+    showStatus("error", "Please connect or paste your wallet address first.");
+    return;
+  }
+  checkAttempts = 0;
+  document.getElementById("check-card").classList.add("show");
+  document.getElementById("check-icon").textContent = "🔍";
+  document.getElementById("check-title").textContent = "Scanning blockchain...";
+  document.getElementById("check-status").innerHTML = '<span class="pulse">●</span> Looking for your transaction...';
+  document.getElementById("check-status").className = "check-status";
+  document.getElementById("retry-row").style.display = "none";
+  document.getElementById("check-tx").style.display = "none";
+  document.getElementById("check-card").scrollIntoView({behavior:"smooth", block:"nearest"});
+  await runPaymentCheck();
+}
+
+async function runPaymentCheck() {
+  checkAttempts++;
+  document.getElementById("check-status").innerHTML =
+    '<span class="pulse">●</span> Attempt ' + checkAttempts + ' of ' + MAX_ATTEMPTS + ' — scanning...';
+
+  try {
+    // Hit the API to trigger a server-side wallet scan
+    var res = await fetch(API + "/presale/check?wallet=" + encodeURIComponent(connectedAddr));
+    var data = await res.json();
+
+    if (data.found) {
+      // Payment detected and processed
+      document.getElementById("check-icon").textContent = "🎉";
+      document.getElementById("check-title").textContent = "Payment Confirmed!";
+      document.getElementById("check-status").innerHTML =
+        "✅ <strong>" + data.amount_sol.toFixed(4) + " SOL</strong> received<br>" +
+        "🪙 <strong>" + parseInt(data.tokens_allocated).toLocaleString() + " TKB</strong> allocated<br>" +
+        (data.tokens_sent ? "✅ Tokens sent to your wallet!" : "📋 Tokens queued for airdrop!");
+      document.getElementById("check-status").className = "check-status found";
+      var txEl = document.getElementById("check-tx");
+      txEl.textContent = "TX: " + data.tx_signature;
+      txEl.style.display = "block";
+      // Transition to success screen after 2s
+      setTimeout(function() {
+        document.getElementById("s-sol").textContent = data.amount_sol.toFixed(4) + " SOL";
+        document.getElementById("s-tkb").textContent = parseInt(data.tokens_allocated).toLocaleString() + " TKB";
+        document.getElementById("s-wallet").textContent = connectedAddr;
+        document.getElementById("s-status-text").textContent =
+          data.tokens_sent ? "✅ Sent to wallet" : "📋 Queued for airdrop";
+        document.getElementById("s-tx").textContent = data.tx_signature.slice(0,20) + "...";
+        document.getElementById("s-tx-row").style.display = "flex";
+        showScreen("success");
+        loadInfo();
+      }, 2000);
+      return;
+    }
+
+    if (data.already_recorded) {
+      document.getElementById("check-icon").textContent = "✅";
+      document.getElementById("check-title").textContent = "Already Recorded!";
+      document.getElementById("check-status").innerHTML =
+        "Your payment was already confirmed.<br>Check /mystats in the Telegram bot.";
+      document.getElementById("check-status").className = "check-status found";
+      document.getElementById("retry-row").style.display = "flex";
+      return;
+    }
+
+    // Not found yet
+    if (checkAttempts < MAX_ATTEMPTS) {
+      document.getElementById("check-status").innerHTML =
+        '<span class="pulse">●</span> Not detected yet — waiting for confirmation...<br>' +
+        '<small style="color:rgba(255,255,255,0.35)">Solana can take 30–60s. Checking again in 10s...</small>';
+      checkTimer = setTimeout(runPaymentCheck, 10000);
+    } else {
+      // Give up after MAX_ATTEMPTS
+      document.getElementById("check-icon").textContent = "⏳";
+      document.getElementById("check-title").textContent = "Not Detected Yet";
+      document.getElementById("check-status").innerHTML =
+        "We couldn\'t detect your payment yet.<br><br>" +
+        "Make sure you sent SOL <strong>from</strong> your registered wallet:<br>" +
+        "<code style=\'font-size:10px\'>" + connectedAddr.slice(0,20) + "...</code><br><br>" +
+        "Our monitor checks every 20s automatically. You\'ll get a Telegram notification when it arrives.";
+      document.getElementById("check-status").className = "check-status not-found";
+      document.getElementById("retry-row").style.display = "flex";
+    }
+  } catch(e) {
+    document.getElementById("check-icon").textContent = "⚠️";
+    document.getElementById("check-title").textContent = "Network Error";
+    document.getElementById("check-status").innerHTML =
+      "Could not reach server. Your payment is still being monitored automatically.";
+    document.getElementById("check-status").className = "check-status error";
+    document.getElementById("retry-row").style.display = "flex";
+  }
+}
+
+// Show sent btn whenever manual box is visible
+var _origOnConnected = onConnected;
+function onConnected(addr) {
+  _origOnConnected(addr);
+  if (isManual) {
+    showSentBtn();
+  }
+}
+
+// Also show sent btn after sendTx completes (wallet connected flow)
+// Override sendTx to show sent btn on cancel/error
+var _origSendTx = sendTx;
+async function sendTx() {
+  await _origSendTx();
+  // If still on buy screen after sendTx (tx was cancelled or failed), show sent btn
+  var buyScreen = document.getElementById("s-buy");
+  if (buyScreen && buyScreen.classList.contains("active")) {
+    showSentBtn();
+  }
+}
+
 </script>
 </body>
-</html> 
+</html>

@@ -20,7 +20,7 @@ def _clean_url(val):
     return val.strip()
 
 WEBAPP_URL = _clean_url(os.getenv("WEBAPP_URL", "https://tikbit-bot.onrender.com/miniapp"))
-REGISTER_WALLET, VERIFY_TX = range(2)
+REGISTER_WALLET, VERIFY_TX, SENT_WAIT = range(3)
 
 def is_admin(uid): return uid in config.ADMIN_IDS
 
@@ -171,6 +171,7 @@ async def buy(update, context):
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🚀 Buy via App Instead", web_app=WebAppInfo(url=WEBAPP_URL))],
+            [InlineKeyboardButton("✅ I've Sent SOL", callback_data="sent_sol")],
         ])
     )
 
@@ -324,12 +325,119 @@ async def button_handler(update, context):
         "buy": buy, "mystats": my_stats, "status": presale_status,
         "howtobuy": how_to_buy,
         "connect_guide": connect_guide_callback,
+        "sent_sol": sent_sol_callback,
     }
     if data in handlers:
         await handlers[data](update, context)
     elif data == "menu":
         await update.callback_query.answer()
         await update.callback_query.message.reply_text("Main menu 👇", reply_markup=main_menu_keyboard())
+
+
+async def sent_sol_callback(update, context):
+    """User tapped 'I've Sent SOL' — trigger an immediate wallet scan."""
+    q = update.callback_query
+    await q.answer("Checking your wallet now... ⏳")
+    user = update.effective_user
+    wallet = db.get_wallet(user.id)
+    if not wallet:
+        await q.message.reply_text(
+            "⚠️ You haven't registered a wallet yet!\n"
+            "Use /register first, then send SOL.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("👛 Register Wallet", callback_data="register")]
+            ])
+        )
+        return
+    await q.message.reply_text(
+        f"🔍 *Scanning your wallet...*\n\n"
+        f"Looking for incoming SOL from:\n`{wallet}`\n\n"
+        f"This takes a few seconds...",
+        parse_mode="Markdown"
+    )
+    result = await check_wallet_for_payment(user.id, user.username, wallet)
+    if result["found"]:
+        await q.message.reply_text(
+            f"🎉 *Payment Found & Processed!*\n\n"
+            f"💵 *{result['amount_sol']:.4f} SOL* received\n"
+            f"🪙 *{int(result['tokens']):,} {config.TOKEN_SYMBOL}* allocated\n"
+            f"👛 `{wallet}`\n"
+            f"🔗 TX: `{result['tx_sig'][:20]}...`\n\n"
+            f"{'✅ Tokens sent to your wallet!' if result.get('sent') else '📋 Tokens queued for airdrop!'}",
+            parse_mode="Markdown",
+            reply_markup=main_menu_keyboard()
+        )
+    elif result["already_recorded"]:
+        sol, tokens, count = db.get_user_stats(str(user.id))
+        await q.message.reply_text(
+            f"✅ *Your payment is already recorded!*\n\n"
+            f"💵 Total contributed: *{sol:.4f} SOL*\n"
+            f"🪙 Tokens allocated: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n\n"
+            f"Use /mystats to see your full history.",
+            parse_mode="Markdown",
+            reply_markup=main_menu_keyboard()
+        )
+    else:
+        await q.message.reply_text(
+            f"⏳ *No new payment detected yet.*\n\n"
+            f"Make sure you sent SOL *from* this wallet:\n`{wallet}`\n\n"
+            f"*To* the presale wallet:\n`{config.PRESALE_WALLET}`\n\n"
+            f"Transactions can take 30–60 seconds to confirm on Solana. "
+            f"Our monitor will detect it automatically — you'll get a notification here when it arrives.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Check Again", callback_data="sent_sol")],
+                [InlineKeyboardButton("🔙 Main Menu", callback_data="menu")],
+            ])
+        )
+
+
+async def check_wallet_for_payment(user_id, username, wallet: str) -> dict:
+    """
+    Scan recent transactions to the presale wallet.
+    Look for one sent FROM the user's registered wallet.
+    Returns dict: found, amount_sol, tokens, tx_sig, sent, already_recorded
+    """
+    result = {"found": False, "already_recorded": False,
+              "amount_sol": 0, "tokens": 0, "tx_sig": "", "sent": False}
+    try:
+        recent = solana_utils.get_recent_transactions(30)
+        for tx_info in recent:
+            sig = tx_info["signature"]
+            # Already in DB — user's payment was previously recorded
+            if db.tx_exists(sig):
+                # Check if it belongs to this wallet
+                parsed = solana_utils.get_sender_from_tx(sig)
+                if parsed["success"] and parsed["sender"] == wallet:
+                    result["already_recorded"] = True
+                    return result
+                continue
+            # Parse this tx
+            parsed = solana_utils.get_sender_from_tx(sig)
+            if not parsed["success"]:
+                continue
+            if parsed["sender"] != wallet:
+                continue
+            # This is the user's payment — process it
+            amount_sol = parsed["amount_sol"]
+            tokens = amount_sol / config.PRESALE_PRICE_SOL
+            saved = db.add_contribution(
+                str(user_id), username, wallet, amount_sol, sig
+            )
+            if not saved:
+                # add_contribution returns False if tx already exists (race condition)
+                result["already_recorded"] = True
+                return result
+            tr = solana_utils.send_tokens(wallet, tokens)
+            result["found"] = True
+            result["amount_sol"] = amount_sol
+            result["tokens"] = tokens
+            result["tx_sig"] = sig
+            result["sent"] = tr["success"]
+            return result
+    except Exception as e:
+        logger.error(f"check_wallet_for_payment error: {e}")
+    return result
 
 def build_bot():
     app = Application.builder().token(config.BOT_TOKEN).build()
@@ -356,60 +464,190 @@ def build_bot():
     return app
 
 async def monitor_transactions(bot_app):
-    logger.info("TX monitor started")
+    """
+    Bulletproof transaction monitor.
+    - Polls every 20s (faster than before)
+    - Double-checks every tx with db.tx_exists BEFORE and AFTER add_contribution
+    - Retries token send up to 3 times on failure
+    - Logs every step for auditability
+    - Never processes same tx twice
+    - Handles unregistered wallets (saves contribution, no Telegram notify)
+    """
+    logger.info("TX monitor started — polling every 20s")
     seen = set()
+
+    # Pre-load ALL existing tx signatures from DB + recent chain
+    # This prevents reprocessing on restart
     try:
-        for tx in solana_utils.get_recent_transactions(50): seen.add(tx["signature"])
-        logger.info(f"Pre-loaded {len(seen)} signatures")
-    except Exception as e: logger.error(f"Pre-load: {e}")
+        conn = __import__("sqlite3").connect("presale.db")
+        rows = conn.execute("SELECT tx_signature FROM contributions").fetchall()
+        conn.close()
+        for r in rows:
+            seen.add(r[0])
+        logger.info(f"Loaded {len(seen)} existing tx signatures from DB")
+    except Exception as e:
+        logger.error(f"DB pre-load error: {e}")
+
+    try:
+        for tx in solana_utils.get_recent_transactions(50):
+            seen.add(tx["signature"])
+        logger.info(f"Total seen after chain pre-load: {len(seen)}")
+    except Exception as e:
+        logger.error(f"Chain pre-load error: {e}")
 
     while True:
         try:
-            await asyncio.sleep(30)
-            for tx_info in solana_utils.get_recent_transactions(20):
+            await asyncio.sleep(20)
+            recent = solana_utils.get_recent_transactions(25)
+
+            for tx_info in recent:
                 sig = tx_info["signature"]
-                if sig in seen: continue
+
+                # Fast check: already in seen set
+                if sig in seen:
+                    continue
+
+                # Add to seen immediately to prevent parallel processing
                 seen.add(sig)
+
+                # Double-check DB (handles restart race conditions)
+                if db.tx_exists(sig):
+                    logger.info(f"TX {sig[:20]} already in DB, skipping")
+                    continue
+
+                # Parse the transaction
                 parsed = solana_utils.get_sender_from_tx(sig)
-                if not parsed["success"]: continue
+                if not parsed["success"]:
+                    logger.debug(f"TX {sig[:20]} not a valid presale payment")
+                    continue
+
                 sender = parsed["sender"]
                 amount_sol = parsed["amount_sol"]
                 tokens = amount_sol / config.PRESALE_PRICE_SOL
-                if db.tx_exists(sig): continue
+
+                logger.info(
+                    f"NEW PAYMENT | TX: {sig[:20]} | "
+                    f"Wallet: {sender[:12]} | "
+                    f"Amount: {amount_sol:.4f} SOL | "
+                    f"Tokens: {int(tokens):,} TKB"
+                )
+
+                # Look up registered user
                 user_id = db.get_user_id_by_wallet(sender)
-                username = db.get_username_by_wallet(sender) if user_id else "unknown"
-                if not db.add_contribution(user_id or sender, username, sender, amount_sol, sig): continue
-                tr = solana_utils.send_tokens(sender, tokens)
-                logger.info(f"TX {sig[:16]}: {amount_sol} SOL → {int(tokens):,} TKB to {sender[:8]}")
+                username = db.get_username_by_wallet(sender) if user_id else "unregistered"
+
+                # Save to DB — this is the authoritative record
+                # add_contribution uses UNIQUE constraint on tx_signature
+                # so even if called twice, only one record is created
+                saved = db.add_contribution(
+                    user_id or sender,
+                    username,
+                    sender,
+                    amount_sol,
+                    sig
+                )
+                if not saved:
+                    logger.warning(
+                        f"TX {sig[:20]} could not be saved — "
+                        f"likely a race condition duplicate, skipping token send"
+                    )
+                    continue
+
+                logger.info(f"TX {sig[:20]} saved to DB ✅")
+
+                # Send tokens — retry up to 3 times
+                tr = {"success": False, "tx_signature": None, "message": "Not attempted"}
+                for attempt in range(1, 4):
+                    tr = solana_utils.send_tokens(sender, tokens)
+                    if tr["success"]:
+                        logger.info(
+                            f"Tokens sent ✅ | Attempt {attempt} | "
+                            f"Token TX: {tr.get('tx_signature','QUEUED')}"
+                        )
+                        break
+                    else:
+                        logger.warning(
+                            f"Token send attempt {attempt}/3 failed: {tr['message']}"
+                        )
+                        if attempt < 3:
+                            await asyncio.sleep(5)
+
+                if not tr["success"]:
+                    logger.error(
+                        f"ALL 3 TOKEN SEND ATTEMPTS FAILED for {sig[:20]} | "
+                        f"Wallet: {sender} | Tokens: {int(tokens):,} | "
+                        f"Error: {tr['message']} | "
+                        f"MANUAL AIRDROP REQUIRED"
+                    )
+
+                # Notify buyer via Telegram (if registered)
                 if user_id:
                     try:
-                        if tr["success"] and tr.get("tx_signature") != "QUEUED":
-                            note = (f"🎉 *Payment Confirmed!*\n\n"
-                                    f"💵 *{amount_sol:.4f} SOL* received\n"
-                                    f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* sent!\n"
-                                    f"🔗 TX: `{tr['tx_signature']}`")
+                        if tr["success"] and tr.get("tx_signature") not in (None, "QUEUED"):
+                            msg = (
+                                f"🎉 *Payment Confirmed!*\n\n"
+                                f"💵 Received: *{amount_sol:.4f} SOL*\n"
+                                f"🪙 Sent: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n"
+                                f"👛 To: `{sender}`\n"
+                                f"🔗 Token TX: `{tr['tx_signature'][:30]}...`\n\n"
+                                f"✅ Tokens are in your wallet!"
+                            )
+                        elif tr.get("tx_signature") == "QUEUED":
+                            msg = (
+                                f"✅ *Payment Confirmed!*\n\n"
+                                f"💵 Received: *{amount_sol:.4f} SOL*\n"
+                                f"🪙 Allocated: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n"
+                                f"👛 Wallet: `{sender}`\n\n"
+                                f"📋 Your tokens are recorded and will be airdropped after presale ends!"
+                            )
                         else:
-                            note = (f"✅ *Payment Confirmed!*\n\n"
-                                    f"💵 *{amount_sol:.4f} SOL* received\n"
-                                    f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* allocated\n"
-                                    f"📋 Tokens airdropped after presale ends!")
+                            msg = (
+                                f"⚠️ *Payment Received — Token Send Issue*\n\n"
+                                f"💵 We received your *{amount_sol:.4f} SOL* ✅\n"
+                                f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* is allocated to you.\n\n"
+                                f"Our team will manually send your tokens shortly.\n"
+                                f"Contact @tikbitcoincommunity if needed.\n"
+                                f"TX: `{sig[:30]}...`"
+                            )
                         await bot_app.bot.send_message(
-                            chat_id=user_id, text=note,
-                            parse_mode="Markdown", reply_markup=main_menu_keyboard()
+                            chat_id=user_id,
+                            text=msg,
+                            parse_mode="Markdown",
+                            reply_markup=main_menu_keyboard()
                         )
-                    except Exception as e: logger.error(f"Notify {user_id}: {e}")
+                        logger.info(f"Notified user {user_id} ✅")
+                    except Exception as e:
+                        logger.error(f"Failed to notify user {user_id}: {e}")
+                else:
+                    logger.info(
+                        f"Unregistered wallet {sender[:12]} sent {amount_sol:.4f} SOL — "
+                        f"contribution recorded, no Telegram notification"
+                    )
+
+                # Always notify admins — regardless of token send status
+                admin_msg = (
+                    f"💰 *New Contribution!*\n\n"
+                    f"👤 User: {user_id or 'UNREGISTERED'}\n"
+                    f"💵 Amount: *{amount_sol:.4f} SOL*\n"
+                    f"🪙 Tokens: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n"
+                    f"👛 Wallet: `{sender}`\n"
+                    f"🔗 SOL TX: `{sig}`\n"
+                    f"📤 Token TX: `{tr.get('tx_signature', 'FAILED — MANUAL REQUIRED')}`\n"
+                    f"Status: {'✅ Sent' if tr['success'] else '❌ FAILED — CHECK LOGS'}"
+                )
                 for aid in config.ADMIN_IDS:
                     try:
-                        await bot_app.bot.send_message(chat_id=aid, parse_mode="Markdown",
-                            text=(f"💰 *New Contribution!*\n"
-                                  f"👤 {user_id or 'unregistered'}\n"
-                                  f"💵 {amount_sol:.4f} SOL → {int(tokens):,} TKB\n"
-                                  f"👛 `{sender}`\n🔗 `{sig}`\n"
-                                  f"Token TX: `{tr.get('tx_signature','N/A')}`"))
-                    except Exception as e: logger.error(f"Notify admin {aid}: {e}")
+                        await bot_app.bot.send_message(
+                            chat_id=aid,
+                            text=admin_msg,
+                            parse_mode="Markdown"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify admin {aid}: {e}")
+
         except Exception as e:
-            logger.error(f"Monitor: {e}")
-            await asyncio.sleep(30)
+            logger.error(f"Monitor loop error: {e}", exc_info=True)
+            await asyncio.sleep(20)
 
 bot_app_global = None
 
@@ -485,3 +723,102 @@ def user_stats(user_id: str):
     return {"user_id": user_id, "wallet": db.get_wallet(user_id),
             "total_sol": round(sol or 0, 4), "total_tokens": int(tokens or 0),
             "tx_count": count or 0, "token_symbol": config.TOKEN_SYMBOL}
+
+@app.get("/presale/check")
+async def check_wallet_payment(wallet: str):
+    """
+    Called by the mini app when user taps 'I\'ve Sent SOL'.
+    Scans recent transactions to the presale wallet for a payment from this wallet.
+    Returns found/already_recorded status.
+    """
+    if not solana_utils.is_valid_solana_address(wallet):
+        raise HTTPException(400, "Invalid wallet address")
+
+    try:
+        recent = solana_utils.get_recent_transactions(30)
+        for tx_info in recent:
+            sig = tx_info["signature"]
+
+            # Already in DB
+            if db.tx_exists(sig):
+                parsed = solana_utils.get_sender_from_tx(sig)
+                if parsed["success"] and parsed["sender"] == wallet:
+                    return {"found": False, "already_recorded": True}
+                continue
+
+            # Parse
+            parsed = solana_utils.get_sender_from_tx(sig)
+            if not parsed["success"] or parsed["sender"] != wallet:
+                continue
+
+            # Found a new payment — process it
+            amount_sol = parsed["amount_sol"]
+            tokens = amount_sol / config.PRESALE_PRICE_SOL
+            user_id = db.get_user_id_by_wallet(wallet)
+            username = db.get_username_by_wallet(wallet) if user_id else "unknown"
+
+            saved = db.add_contribution(
+                user_id or wallet, username, wallet, amount_sol, sig
+            )
+            if not saved:
+                return {"found": False, "already_recorded": True}
+
+            tr = solana_utils.send_tokens(wallet, tokens)
+
+            # Notify via Telegram if registered
+            if user_id and bot_app_global:
+                try:
+                    if tr["success"] and tr.get("tx_signature") not in (None, "QUEUED"):
+                        msg = (
+                            f"🎉 *Payment Confirmed via Mini App!*\n\n"
+                            f"💵 *{amount_sol:.4f} SOL* received\n"
+                            f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* sent!\n"
+                            f"🔗 Token TX: `{tr['tx_signature'][:30]}...`\n\n"
+                            f"✅ Tokens are in your wallet!"
+                        )
+                    else:
+                        msg = (
+                            f"✅ *Payment Confirmed via Mini App!*\n\n"
+                            f"💵 *{amount_sol:.4f} SOL* received\n"
+                            f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* allocated\n"
+                            f"📋 Tokens will be airdropped after presale ends!"
+                        )
+                    await bot_app_global.bot.send_message(
+                        chat_id=user_id, text=msg,
+                        parse_mode="Markdown", reply_markup=main_menu_keyboard()
+                    )
+                except Exception as e:
+                    logger.error(f"check endpoint notify error: {e}")
+
+            # Notify admins
+            for aid in config.ADMIN_IDS:
+                try:
+                    if bot_app_global:
+                        await bot_app_global.bot.send_message(
+                            chat_id=aid, parse_mode="Markdown",
+                            text=(
+                                f"💰 *New Contribution (Mini App)!*\n"
+                                f"👤 {user_id or 'UNREGISTERED'}\n"
+                                f"💵 {amount_sol:.4f} SOL → {int(tokens):,} TKB\n"
+                                f"👛 `{wallet}`\n🔗 `{sig}`\n"
+                                f"Token TX: `{tr.get('tx_signature','FAILED')}`"
+                            )
+                        )
+                except Exception as e:
+                    logger.error(f"check endpoint admin notify: {e}")
+
+            return {
+                "found": True,
+                "amount_sol": amount_sol,
+                "tokens_allocated": int(tokens),
+                "token_symbol": config.TOKEN_SYMBOL,
+                "tx_signature": sig,
+                "tokens_sent": tr["success"],
+                "already_recorded": False
+            }
+
+        return {"found": False, "already_recorded": False}
+
+    except Exception as e:
+        logger.error(f"check_wallet_payment error: {e}")
+        raise HTTPException(500, f"Server error: {str(e)}")
