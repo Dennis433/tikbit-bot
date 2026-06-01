@@ -175,7 +175,7 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
     <h4>&#128203; Send Manually</h4>
     <p style="font-size:11px;color:rgba(255,255,255,0.35);margin-bottom:10px">Open any Solana wallet app and send SOL to:</p>
     <div class="copy-row">
-      <span id="presale-addr-display">GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe</span>
+      <span id="presale-addr-display">3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm</span>
       <button class="copy-btn" onclick="copyAddr()">Copy</button>
     </div>
     <ul class="manual-steps">
@@ -264,7 +264,7 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
 
 <script>
 // ── CONFIG ──
-const PRESALE_WALLET = "GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe";
+const PRESALE_WALLET = "3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm";
 const TOKENS_PER_SOL = 10000;
 const MIN_SOL = 0.1;
 const MAX_SOL = 10;
@@ -736,22 +736,10 @@ async function runPaymentCheck() {
 var _origOnConnected = onConnected;
 function onConnected(addr) {
   _origOnConnected(addr);
-  if (isManual) {
-    showSentBtn();
-  }
+  showSentBtn(); // Always show for all wallet types
 }
 
-// Also show sent btn after sendTx completes (wallet connected flow)
-// Override sendTx to show sent btn on cancel/error
-var _origSendTx = sendTx;
-async function sendTx() {
-  await _origSendTx();
-  // If still on buy screen after sendTx (tx was cancelled or failed), show sent btn
-  var buyScreen = document.getElementById("s-buy");
-  if (buyScreen && buyScreen.classList.contains("active")) {
-    showSentBtn();
-  }
-}
+// Sent button always shown on wallet connect
 
 </script>
 </body>

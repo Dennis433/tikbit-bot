@@ -10,7 +10,9 @@ services:
       - key: RPC_URL
         value: https://api.mainnet-beta.solana.com
       - key: PRESALE_WALLET
-        value: GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe
+        value: 3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm
+      - key: AIRDROP_WALLET
+        value: 3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm
       - key: TOKEN_MINT
         value: 3EKzLrEqgERdg4xAkmzY3LLb2RW9SfJ8WFxNLRd2u73yE
       - key: TOKEN_NAME
@@ -18,4 +20,6 @@ services:
       - key: TOKEN_SYMBOL
         value: TKB
       - key: WEBAPP_URL
+        sync: false
+      - key: AIRDROP_PRIVATE_KEY
         sync: false
