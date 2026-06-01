@@ -613,6 +613,167 @@ const MORE = [
   { name:"Spot",        icon:"https://spot-wallet.com/favicon.ico",                            detect:()=>!!window.spot?.solana,          connectFn:()=>connectGeneric(window.spot?.solana,"Spot"),         mobileFn:null, installUrl:"https://spot-wallet.com" },
 ];
 
+//
+// HARD FACT from Phantom official docs (docs.phantom.com):
+//
+// - window.phantom is ONLY injected in:
+//     1. Phantom's own in-app browser
+//     2. Chrome/Brave/Firefox with Phantom extension installed
+//
+// - It is NEVER available in:
+//     - Telegram WebView (mobile or desktop)
+//     - Safari, Chrome, any browser without the extension
+//
+// CORRECT SOLUTIONS per environment:
+//
+// [Telegram mobile / any mobile browser]
+//   → Use https://phantom.app/ul/browse/<encoded_url>
+//     This opens the current page INSIDE Phantom's in-app browser
+//     where window.phantom IS injected → connect works normally.
+//     User stays on the same page, just inside Phantom's browser.
+//
+// [Telegram desktop / any desktop without extension]
+//   → Show URL for user to copy into Chrome where extension is installed.
+//     OR use the "paste address" fallback (works for everyone).
+//
+// [Chrome/Brave with Phantom extension] → window.phantom exists → connect directly.
+//
+// The phantom://v1/connect deep link (encryption-based) is ONLY for
+// native iOS/Android apps — NOT for web pages. Web apps must use
+// the in-app browser approach.
+
+const IS_MOBILE   = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const IN_TELEGRAM = (window.Telegram?.WebApp?.initData !== undefined &&
+                     window.Telegram?.WebApp?.initData !== "") ||
+                    typeof window.TelegramWebviewProxy !== "undefined";
+const IN_PHANTOM_BROWSER = !!(window.phantom?.solana?.isPhantom);
+const PAGE_URL    = window.location.href;
+const PAGE_ENC    = encodeURIComponent(PAGE_URL);
+
+// ── Wallet detection ──
+function hasPhantom()  { return !!(window.phantom?.solana?.isPhantom || window.solana?.isPhantom); }
+function hasSolflare() { return !!(window.solflare?.isSolflare); }
+function hasBackpack() { return !!(window.backpack); }
+function hasOKX()      { return !!(window.okxwallet?.solana); }
+function hasCoin98()   { return !!(window.coin98?.sol); }
+function hasBitget()   { return !!(window.bitkeep?.solana); }
+function hasTrust()    { return !!(window.trustwallet?.solana); }
+function hasExodus()   { return !!(window.exodus?.solana); }
+
+// ── Open page inside Phantom's in-app browser ──
+// This is the OFFICIAL way for web apps on mobile.
+// Source: https://docs.phantom.com/phantom-deeplinks/other-methods/browse
+function openInPhantomBrowser() {
+  window.location.href = "https://phantom.app/ul/browse/" + PAGE_ENC + "?ref=" + PAGE_ENC;
+}
+
+function openInSolflareBrowser() {
+  window.location.href = "https://solflare.com/ul/v1/browse/" + PAGE_ENC + "?ref=" + PAGE_ENC;
+}
+
+// ── Desktop: show copy-URL modal ──
+function showDesktopModal(walletName) {
+  const existing = document.getElementById("desktopModal");
+  if (existing) existing.remove();
+  const m = document.createElement("div");
+  m.id = "desktopModal";
+  m.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;";
+  m.innerHTML = `
+    <div style="background:#1C1C1C;border:1px solid rgba(255,184,0,0.4);border-radius:16px;padding:24px;max-width:360px;width:100%;text-align:center;">
+      <div style="font-size:32px;margin-bottom:10px;">💻</div>
+      <div style="font-size:15px;font-weight:800;color:#FFB800;margin-bottom:10px;">Open in Chrome or Brave</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.5);line-height:1.6;margin-bottom:14px;">
+        Telegram desktop blocks wallet extensions. Copy this URL and open it in the browser where your <strong style="color:#fff">${walletName}</strong> extension is installed:
+      </div>
+      <div style="background:#111;border-radius:8px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+        <span style="flex:1;font-size:10px;font-family:monospace;color:#00C8FF;word-break:break-all;text-align:left;">${PAGE_URL}</span>
+        <button id="copyUrlBtn" style="background:#FFB800;border:none;border-radius:6px;padding:6px 10px;color:#0D0D0D;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.3);margin-bottom:16px;">Or paste your wallet address in the field below — no extension needed.</div>
+      <button onclick="document.getElementById('desktopModal').remove()" style="width:100%;background:transparent;border:1px solid rgba(255,184,0,0.3);border-radius:10px;padding:10px;color:#FFB800;font-size:13px;cursor:pointer;">Got it</button>
+    </div>`;
+  document.body.appendChild(m);
+  document.getElementById("copyUrlBtn").onclick = () => {
+    navigator.clipboard.writeText(PAGE_URL).catch(()=>{});
+    document.getElementById("copyUrlBtn").textContent = "✅ Copied!";
+  };
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+}
+
+// ── Master wallet action router ──
+function walletAction(w) {
+  // Already inside Phantom's browser → window.phantom exists → connect directly
+  if (w.detect()) { w.connectFn(); return; }
+
+  // On mobile (Telegram or any mobile browser) → open page in wallet's in-app browser
+  if (IS_MOBILE && w.mobileBrowserFn) {
+    w.mobileBrowserFn();
+    return;
+  }
+
+  // On mobile but wallet has no in-app browser → focus paste field
+  if (IS_MOBILE) {
+    showMsg("Paste your " + w.name + " wallet address in the field below.", "info");
+    document.getElementById("manualAddr").focus();
+    return;
+  }
+
+  // Desktop inside Telegram → show copy URL modal
+  if (IN_TELEGRAM && !IS_MOBILE) {
+    showDesktopModal(w.name);
+    return;
+  }
+
+  // Desktop real browser, not installed → go to install
+  window.open(w.installUrl, "_blank");
+  showMsg("Opening " + w.name + " install page. Or paste your address below.", "info");
+}
+
+// ── Wallet definitions ──
+const PRIMARY = [
+  { name:"Phantom",
+    icon:"https://raw.githubusercontent.com/solana-labs/wallet-adapter/master/packages/wallets/phantom/icon.png",
+    detect:hasPhantom,   connectFn:connectPhantom,
+    mobileBrowserFn: openInPhantomBrowser,
+    installUrl:"https://phantom.app" },
+
+  { name:"Solflare",
+    icon:"https://raw.githubusercontent.com/solana-labs/wallet-adapter/master/packages/wallets/solflare/icon.svg",
+    detect:hasSolflare,  connectFn:connectSolflare,
+    mobileBrowserFn: openInSolflareBrowser,
+    installUrl:"https://solflare.com" },
+
+  { name:"Backpack",
+    icon:"https://raw.githubusercontent.com/coral-xyz/backpack/master/assets/backpack.png",
+    detect:hasBackpack,  connectFn:connectBackpack,
+    mobileBrowserFn: null,
+    installUrl:"https://backpack.app" },
+
+  { name:"OKX Wallet",
+    icon:"https://www.okx.com/cdn/assets/imgs/236/E274133B3A66FBFF.png",
+    detect:hasOKX,       connectFn:()=>connectGeneric(window.okxwallet?.solana,"OKX"),
+    mobileBrowserFn: ()=>{ window.location.href = "okx://wallet/dapp/url?dappUrl=" + PAGE_ENC; },
+    installUrl:"https://okx.com/web3" },
+
+  { name:"Coin98",     icon:"https://coin98.com/favicon.ico",    detect:hasCoin98,  connectFn:()=>connectGeneric(window.coin98?.sol,"Coin98"),         mobileBrowserFn:null, installUrl:"https://coin98.com" },
+  { name:"Bitget",     icon:"https://web3.bitget.com/favicon.ico",detect:hasBitget, connectFn:()=>connectGeneric(window.bitkeep?.solana,"Bitget"),      mobileBrowserFn:null, installUrl:"https://web3.bitget.com" },
+  { name:"Trust",      icon:"https://trustwallet.com/assets/images/media/assets/TWT.png", detect:hasTrust,  connectFn:()=>connectGeneric(window.trustwallet?.solana,"Trust"),  mobileBrowserFn:null, installUrl:"https://trustwallet.com" },
+  { name:"Exodus",     icon:"https://www.exodus.com/img/logo/exodus-logo.png",      detect:hasExodus, connectFn:()=>connectGeneric(window.exodus?.solana,"Exodus"),     mobileBrowserFn:null, installUrl:"https://exodus.com" },
+];
+
+const MORE = [
+  { name:"Glow",        icon:"https://glow.app/images/logo/logo.png",                          detect:()=>!!window.glow,                  connectFn:()=>connectGeneric(window.glow,"Glow"),                mobileBrowserFn:null, installUrl:"https://glow.app" },
+  { name:"Math",        icon:"https://mathwallet.org/favicon.ico",                             detect:()=>!!window.solana?.isMathWallet,  connectFn:()=>connectGeneric(window.solana,"MathWallet"),         mobileBrowserFn:null, installUrl:"https://mathwallet.org" },
+  { name:"Safepal",     icon:"https://www.safepal.com/favicon.ico",                            detect:()=>!!window.safepal?.solana,       connectFn:()=>connectGeneric(window.safepal?.solana,"Safepal"),   mobileBrowserFn:null, installUrl:"https://safepal.com" },
+  { name:"Clover",      icon:"https://clover.finance/favicon.ico",                             detect:()=>!!window.clover_solana,         connectFn:()=>connectGeneric(window.clover_solana,"Clover"),      mobileBrowserFn:null, installUrl:"https://clover.finance" },
+  { name:"TokenPocket", icon:"https://www.tokenpocket.pro/favicon.ico",                        detect:()=>!!window.solana?.isTokenPocket, connectFn:()=>connectGeneric(window.solana,"TokenPocket"),        mobileBrowserFn:null, installUrl:"https://tokenpocket.pro" },
+  { name:"Onto",        icon:"https://onto.app/favicon.ico",                                   detect:()=>!!window.onto?.solana,          connectFn:()=>connectGeneric(window.onto?.solana,"Onto"),         mobileBrowserFn:null, installUrl:"https://onto.app" },
+  { name:"XDEFI",       icon:"https://www.xdefi.io/favicon.ico",                               detect:()=>!!window.xfi?.solana,           connectFn:()=>connectGeneric(window.xfi?.solana,"XDEFI"),         mobileBrowserFn:null, installUrl:"https://xdefi.io" },
+  { name:"Nightly",     icon:"https://nightly.app/favicon.ico",                                detect:()=>!!window.nightly?.solana,       connectFn:()=>connectGeneric(window.nightly?.solana,"Nightly"),   mobileBrowserFn:null, installUrl:"https://nightly.app" },
+  { name:"HyperPay",    icon:"https://hyperpay.io/favicon.ico",                                detect:()=>!!window.hyperpay?.solana,      connectFn:()=>connectGeneric(window.hyperpay?.solana,"HyperPay"), mobileBrowserFn:null, installUrl:"https://hyperpay.io" },
+  { name:"Spot",        icon:"https://spot-wallet.com/favicon.ico",                            detect:()=>!!window.spot?.solana,          connectFn:()=>connectGeneric(window.spot?.solana,"Spot"),         mobileBrowserFn:null, installUrl:"https://spot-wallet.com" },
+];
+
 // ── BUILD WALLET GRIDS ──
 function buildGrid(wallets, el) {
   el.innerHTML = "";
@@ -623,12 +784,12 @@ function buildGrid(wallets, el) {
 
     let statusLabel;
     if (detected) {
-      statusLabel = "✓ Connected";
-    } else if (IN_TELEGRAM && IS_MOBILE && w.mobileFn) {
-      statusLabel = "📲 Tap to connect";
-    } else if (IN_TELEGRAM && IS_MOBILE) {
+      statusLabel = "✓ Ready to connect";
+    } else if (IS_MOBILE && w.mobileBrowserFn) {
+      statusLabel = "📲 Open in " + w.name;
+    } else if (IS_MOBILE) {
       statusLabel = "Paste address below";
-    } else if (IN_TELEGRAM && !IS_MOBILE) {
+    } else if (IN_TELEGRAM) {
       statusLabel = "Open in Chrome";
     } else {
       statusLabel = "Click to install";
@@ -652,6 +813,257 @@ function toggleMore() {
   const open = g.classList.toggle("open");
   b.textContent = open ? "▲ Show fewer wallets" : "▼ Show more wallets (300+ supported)";
 }
+
+// ── CONNECT FUNCTIONS ──
+async function connectPhantom() {
+  const p = window.phantom?.solana;
+  if (!p?.isPhantom) { window.open("https://phantom.app","_blank"); showMsg("Phantom not found — opening install page. You can also paste your address below.", "info"); return; }
+  try {
+    showMsg("Connecting to Phantom…", "loading");
+    const r = await p.connect();
+    activeProvider = p; providerName = "Phantom";
+    onConnected(r.publicKey.toString());
+  } catch(e) { showMsg("Phantom: connection cancelled.", "error"); }
+}
+
+async function connectSolflare() {
+  const p = window.solflare;
+  if (!p?.isSolflare) { window.open("https://solflare.com","_blank"); showMsg("Solflare not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Solflare…", "loading");
+    await p.connect();
+    activeProvider = p; providerName = "Solflare";
+    onConnected(p.publicKey.toString());
+  } catch(e) { showMsg("Solflare: connection cancelled.", "error"); }
+}
+
+async function connectBackpack() {
+  const p = window.backpack;
+  if (!p) { window.open("https://backpack.app","_blank"); showMsg("Backpack not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Backpack…", "loading");
+    await p.connect();
+    activeProvider = p; providerName = "Backpack";
+    onConnected(p.publicKey.toString());
+  } catch(e) { showMsg("Backpack: connection cancelled.", "error"); }
+}
+
+async function connectSlope() {
+  const S = window.Slope;
+  if (!S) { window.open("https://slope.finance","_blank"); showMsg("Slope not found — opening install page.", "info"); return; }
+  try {
+    showMsg("Connecting to Slope…", "loading");
+    const slope = new S();
+    const { data } = await slope.connect();
+    activeProvider = slope; providerName = "Slope";
+    onConnected(data.publicKey);
+  } catch(e) { showMsg("Slope: connection cancelled.", "error"); }
+}
+
+async function connectGeneric(provider, name) {
+  if (!provider) { showMsg(name + " not detected on this device.", "error"); return; }
+  try {
+    showMsg("Connecting to " + name + "…", "loading");
+    await provider.connect();
+    const addr = provider.publicKey?.toString() || provider.accounts?.[0]?.address;
+    if (!addr) throw new Error("Could not get address");
+    activeProvider = provider; providerName = name;
+    onConnected(addr);
+  } catch(e) { showMsg(name + ": " + (e.message || "connection cancelled."), "error"); }
+}
+
+function connectManual() {
+  const v = document.getElementById("manualAddr").value.trim();
+  if (!isValidSolAddr(v)) { showMsg("Invalid Solana address. Please check and try again.", "error"); return; }
+  activeProvider = null; providerName = "Manual"; isManualMode = true;
+  onConnected(v);
+}
+
+function isValidSolAddr(a) {
+  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  return a.length >= 32 && a.length <= 44 && [...a].every(c => chars.includes(c));
+}
+
+// ── ON CONNECTED ──
+function onConnected(address) {
+  walletAddress = address;
+  const short = address.slice(0,6) + "…" + address.slice(-6);
+  document.getElementById("wallet-address-text").textContent = short;
+  document.getElementById("wallet-provider-label").textContent = providerName;
+  document.getElementById("wallet-display").style.display = "block";
+
+  // Show manual-send box if no extension
+  if (isManualMode) {
+    document.getElementById("manualSendBox").classList.add("show");
+    document.getElementById("buy-btn").style.display = "none";
+  }
+
+  showScreen("buy");
+}
+
+function disconnectWallet() {
+  try { activeProvider?.disconnect?.(); } catch(e) {}
+  walletAddress = null; activeProvider = null; providerName = ""; isManualMode = false;
+  document.getElementById("wallet-display").style.display = "none";
+  document.getElementById("manualSendBox").classList.remove("show");
+  document.getElementById("buy-btn").style.display = "";
+  document.getElementById("manualAddr").value = "";
+  hideStatus();
+  showScreen("connect");
+}
+
+// ── BUY FORM ──
+function setAmount(val) {
+  document.getElementById("sol-amount").value = val;
+  updatePreview();
+  document.querySelectorAll(".quick-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".quick-btn").forEach(b => {
+    if (b.textContent.trim().startsWith(val)) b.classList.add("active");
+  });
+}
+
+function updatePreview() {
+  const sol = parseFloat(document.getElementById("sol-amount").value);
+  const el = document.getElementById("token-preview");
+  if (!sol || isNaN(sol) || sol <= 0) { el.innerHTML = "Enter amount to see token allocation"; return; }
+  if (sol < MIN_SOL) { el.innerHTML = '<span style="color:#FF2D9B">Minimum is ' + MIN_SOL + " SOL</span>"; return; }
+  if (sol > MAX_SOL) { el.innerHTML = '<span style="color:#FF2D9B">Maximum is ' + MAX_SOL + " SOL</span>"; return; }
+  el.innerHTML = "You will receive <span>" + Math.floor(sol * TOKENS_PER_SOL).toLocaleString() + " TKB</span>";
+}
+
+// ── SEND TRANSACTION ──
+async function sendTransaction() {
+  const sol = parseFloat(document.getElementById("sol-amount").value);
+  if (!sol || isNaN(sol) || sol < MIN_SOL || sol > MAX_SOL) {
+    showStatus("error", "Please enter a valid amount between " + MIN_SOL + " and " + MAX_SOL + " SOL"); return;
+  }
+  if (!walletAddress) { showStatus("error", "Please connect your wallet first."); return; }
+  if (isManualMode) { showStatus("info", "You are using manual mode — send SOL using the address in the box below."); document.getElementById("manualSendBox").classList.add("show"); return; }
+  if (!activeProvider) { showStatus("error", "No wallet provider detected."); return; }
+
+  const btn = document.getElementById("buy-btn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Processing…';
+  hideStatus(); showStatus("loading", "⏳ Preparing transaction…");
+
+  try {
+    const conn = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com","confirmed");
+    const from = new solanaWeb3.PublicKey(walletAddress);
+    const to   = new solanaWeb3.PublicKey(PRESALE_WALLET);
+    const lamports = Math.round(sol * 1_000_000_000);
+
+    const tx = new solanaWeb3.Transaction().add(
+      solanaWeb3.SystemProgram.transfer({ fromPubkey:from, toPubkey:to, lamports })
+    );
+    const { blockhash } = await conn.getLatestBlockhash();
+    tx.recentBlockhash = blockhash; tx.feePayer = from;
+
+    showStatus("loading", "⏳ Please approve the transaction in your wallet…");
+
+    let txSig;
+    if (activeProvider.signAndSendTransaction) {
+      const r = await activeProvider.signAndSendTransaction(tx);
+      txSig = r.signature || r;
+    } else if (activeProvider.sendTransaction) {
+      txSig = await activeProvider.sendTransaction(tx, conn);
+    } else {
+      const signed = await activeProvider.signTransaction(tx);
+      const raw = signed.serialize();
+      txSig = await conn.sendRawTransaction(raw);
+    }
+    if (typeof txSig === "object") txSig = txSig.signature || txSig.toString();
+
+    showStatus("loading", "⏳ Confirming on Solana blockchain…");
+    await conn.confirmTransaction(txSig, "confirmed");
+
+    showStatus("loading", "⏳ Recording your allocation…");
+    const vRes = await fetch(API_BASE + "/presale/verify", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ tx_signature:txSig, wallet:walletAddress, user_id:userId, username })
+    });
+    const vData = await vRes.json();
+    if (!vRes.ok) throw new Error(vData.detail || "Verification failed");
+
+    document.getElementById("s-sol").textContent = sol.toFixed(4) + " SOL";
+    document.getElementById("s-tokens").textContent = (vData.tokens_allocated||Math.floor(sol*TOKENS_PER_SOL)).toLocaleString() + " TKB";
+    document.getElementById("s-wallet").textContent = walletAddress;
+    showScreen("success");
+
+  } catch(e) {
+    const msg = e.message || "";
+    if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("reject")) {
+      showStatus("error", "Transaction cancelled.");
+    } else {
+      showStatus("error", "❌ " + msg.slice(0,120));
+      document.getElementById("manualSendBox").classList.add("show");
+    }
+  } finally {
+    btn.disabled = false; btn.innerHTML = "💰 Send SOL &amp; Get Tokens";
+  }
+}
+
+// ── UTILS ──
+function copyPresaleAddr() {
+  const addr = "GrXi4bwRpgSyZMogp1HwGCBSBULZ6c93gbR194uY2hfe";
+  navigator.clipboard?.writeText(addr).catch(()=>{});
+  showMsg("Presale wallet address copied! ✅", "success");
+}
+
+let msgTimer;
+function showMsg(msg, type) {
+  const box = document.getElementById("status-box");
+  box.className = "status-box status-" + type;
+  box.innerHTML = msg; box.style.display = "block";
+  clearTimeout(msgTimer);
+  if (type !== "loading") msgTimer = setTimeout(()=>{ box.style.display="none"; }, 5000);
+}
+function showStatus(type, msg) { showMsg(msg, type); }
+function hideStatus() { document.getElementById("status-box").style.display = "none"; }
+
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-" + name).classList.add("active");
+  const names = ["connect","buy","success"], idx = names.indexOf(name);
+  ["dot1","dot2","dot3"].forEach((id,i)=>{
+    const d = document.getElementById(id);
+    d.classList.remove("active","done");
+    if (i < idx) d.classList.add("done");
+    else if (i === idx) d.classList.add("active");
+  });
+  window.scrollTo(0,0);
+}
+
+function buyMore() {
+  document.getElementById("sol-amount").value = "";
+  document.getElementById("token-preview").innerHTML = "Enter amount to see token allocation";
+  hideStatus(); loadPresaleInfo(); showScreen("buy");
+}
+
+// ── PRESALE INFO ──
+async function loadPresaleInfo() {
+  try {
+    const res = await fetch(API_BASE + "/presale/info");
+    const data = await res.json();
+    const pct = Math.min(data.progress_percent || 0, 100);
+    document.getElementById("progress-fill").style.width = pct + "%";
+    document.getElementById("progress-raised").textContent =
+      (data.total_raised_sol||0).toFixed(2) + " / " + (data.hard_cap_sol||1000) + " SOL raised";
+    document.getElementById("progress-pct").textContent = pct.toFixed(1) + "%";
+  } catch(e) {
+    document.getElementById("progress-raised").textContent = "Could not load stats";
+  }
+}
+
+// ── INIT ──
+document.addEventListener("DOMContentLoaded", () => {
+  buildGrid(PRIMARY, document.getElementById("primaryGrid"));
+  buildGrid(MORE, document.getElementById("moreGrid"));
+  loadPresaleInfo();
+  setInterval(loadPresaleInfo, 30000);
+});
+
+// ── BUILD WALLET GRIDS ──
+
+
 
 // ── CONNECT FUNCTIONS ──
 async function connectPhantom() {
