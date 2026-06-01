@@ -8,7 +8,17 @@ import db
 import solana_utils
 import os
 
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-render-url.onrender.com/miniapp")
+_raw_url = os.getenv("WEBAPP_URL", "https://your-render-url.onrender.com/miniapp")
+# Guard against accidental .env typo like WEBAPP_URL=WEBAPP_URL=https://...
+# Strip any leading "key=value=" prefix until the value starts with http
+def _clean_url(val: str) -> str:
+    while val and not val.startswith("http"):
+        if "=" in val:
+            val = val.split("=", 1)[1]
+        else:
+            break
+    return val.strip()
+WEBAPP_URL = _clean_url(_raw_url)
 
 # Conversation states
 REGISTER_WALLET, VERIFY_TX = range(2)
@@ -447,7 +457,9 @@ def main():
             REGISTER_WALLET: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_wallet)]
         },
         fallbacks=[],
-        per_message=False
+        per_message=False,
+        per_chat=True,
+        per_user=True,
     )
 
     verify_conv = ConversationHandler(
@@ -459,7 +471,9 @@ def main():
             VERIFY_TX: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_tx)]
         },
         fallbacks=[],
-        per_message=False
+        per_message=False,
+        per_chat=True,
+        per_user=True,
     )
 
     app.add_handler(CommandHandler("start", start))

@@ -24,7 +24,16 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, ConversationHandler, filters
 )
 
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tikbit-bot.onrender.com/miniapp")
+def _clean_url(val: str) -> str:
+    """Guard against .env typo like WEBAPP_URL=WEBAPP_URL=https://..."""
+    while val and not val.startswith("http"):
+        if "=" in val:
+            val = val.split("=", 1)[1]
+        else:
+            break
+    return val.strip()
+
+WEBAPP_URL = _clean_url(os.getenv("WEBAPP_URL", "https://tikbit-bot.onrender.com/miniapp"))
 REGISTER_WALLET, VERIFY_TX = range(2)
 
 def is_admin(user_id):
