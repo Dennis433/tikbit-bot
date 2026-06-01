@@ -126,7 +126,7 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
     <div class="rate-grid">
       <div class="rate-item"><div class="lbl">Price</div><div class="val">0.0001 SOL</div><div class="sub">per TKB</div></div>
       <div class="rate-item"><div class="lbl">Rate</div><div class="val">10,000 TKB</div><div class="sub">per 1 SOL</div></div>
-      <div class="rate-item"><div class="lbl">Min Buy</div><div class="val">0.1 SOL</div><div class="sub">= 1,000 TKB</div></div>
+      <div class="rate-item"><div class="lbl">Min Buy</div><div class="val">0.006 SOL</div><div class="sub">~$0.50</div></div>
       <div class="rate-item"><div class="lbl">Max Buy</div><div class="val">10 SOL</div><div class="sub">= 100,000 TKB</div></div>
     </div>
   </div>
@@ -158,13 +158,13 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
   <div class="card">
     <div class="card-title">Enter Amount</div>
     <div class="quick-btns">
-      <div class="qbtn" onclick="setAmt(0.1)">0.1</div>
+      <div class="qbtn" onclick="setAmt(0.006)">0.006</div>
       <div class="qbtn" onclick="setAmt(0.5)">0.5</div>
       <div class="qbtn" onclick="setAmt(1)">1 SOL</div>
       <div class="qbtn" onclick="setAmt(5)">5 SOL</div>
     </div>
     <div class="amt-wrap">
-      <input class="amt-input" type="number" id="sol-amt" placeholder="0.00" min="0.1" max="10" step="0.01" oninput="updatePreview()">
+      <input class="amt-input" type="number" id="sol-amt" placeholder="0.00" min="0.006" max="10" step="0.01" oninput="updatePreview()">
       <span class="sol-tag">SOL</span>
     </div>
     <div class="token-preview" id="tok-preview">Enter amount to see token allocation</div>
@@ -266,7 +266,7 @@ h1{font-size:32px;font-weight:900;background:linear-gradient(135deg,#FFB800,#00C
 // ── CONFIG ──
 const PRESALE_WALLET = "3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm";
 const TOKENS_PER_SOL = 10000;
-const MIN_SOL = 0.1;
+const MIN_SOL = 0.006;
 const MAX_SOL = 10;
 const API = window.location.origin;
 const PAGE = window.location.href;
@@ -477,7 +477,7 @@ function updatePreview() {
   var sol = parseFloat(document.getElementById("sol-amt").value);
   var el = document.getElementById("tok-preview");
   if (!sol || sol <= 0) { el.innerHTML = "Enter amount to see token allocation"; return; }
-  if (sol < MIN_SOL) { el.innerHTML = "<span style='color:#FF2D9B'>Min is " + MIN_SOL + " SOL</span>"; return; }
+  if (sol < MIN_SOL) { el.innerHTML = "<span style='color:#FF2D9B'>Min is " + MIN_SOL + " SOL (~$0.50)</span>"; return; }
   if (sol > MAX_SOL) { el.innerHTML = "<span style='color:#FF2D9B'>Max is " + MAX_SOL + " SOL</span>"; return; }
   el.innerHTML = "You receive <b>" + Math.floor(sol * TOKENS_PER_SOL).toLocaleString() + " TKB</b>";
 }

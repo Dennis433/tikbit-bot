@@ -83,7 +83,7 @@ async def start(update, context):
         f"🪙 *{config.TOKEN_NAME}* (${config.TOKEN_SYMBOL})\n"
         f"💵 Price: *{config.PRESALE_PRICE_SOL} SOL* per token\n"
         f"📊 Rate: *{tps:,} {config.TOKEN_SYMBOL}* per SOL\n"
-        f"📦 Min: *{config.MIN_BUY_SOL} SOL* | Max: *{config.MAX_BUY_SOL} SOL*\n"
+        f"📦 Min: *{config.MIN_BUY_SOL} SOL* (~$0.50) | Max: *{config.MAX_BUY_SOL} SOL*\n"
         f"🎯 Hard Cap: *{config.HARD_CAP_SOL} SOL*\n\n"
         f"📱 New here? Tap *Connect Wallet Guide* below!\n"
         f"📲 Just register your wallet, send SOL, and tokens arrive automatically!\n\n"
