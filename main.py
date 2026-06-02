@@ -135,10 +135,23 @@ async def register_wallet_handler(update, context):
         await update.message.reply_text("❌ Invalid address. Try again.")
         return REGISTER_WALLET
     db.register_wallet(user.id, user.username, wallet)
+    tps = int(1 / config.PRESALE_PRICE_SOL)
+    # Immediately show how to buy after registering
     await update.message.reply_text(
         f"✅ *Wallet Registered!*\n\n`{wallet}`\n\n"
-        "🎯 TKB tokens will be sent here automatically after payment!",
-        parse_mode="Markdown", reply_markup=main_menu_keyboard()
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 *How to Buy {config.TOKEN_NAME}*\n\n"
+        f"Send SOL to this presale wallet:\n`{config.PRESALE_WALLET}`\n\n"
+        f"💱 *{tps:,} {config.TOKEN_SYMBOL} per SOL*\n"
+        f"📦 Min: *{config.MIN_BUY_SOL} SOL* (~$0.50) | Max: *{config.MAX_BUY_SOL} SOL*\n\n"
+        f"✅ Auto-detected in ~30 seconds — tokens sent to your wallet instantly!\n\n"
+        f"📌 Your wallet: `{wallet}`",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ I've Sent SOL", callback_data="sent_sol")],
+            [InlineKeyboardButton("🚀 Open Presale App", web_app=WebAppInfo(url=WEBAPP_URL))],
+            [InlineKeyboardButton("🔙 Main Menu", callback_data="menu")],
+        ])
     )
     return ConversationHandler.END
 
@@ -335,59 +348,53 @@ async def button_handler(update, context):
 
 
 async def sent_sol_callback(update, context):
-    """User tapped 'I've Sent SOL' — trigger an immediate wallet scan."""
+    """
+    User tapped 'I've Sent SOL'.
+    Does NOT credit anything — only checks if the background monitor
+    has already recorded a payment from this wallet. The monitor is the
+    single source of truth for crediting, preventing double-credits.
+    """
     q = update.callback_query
-    await q.answer("Checking your wallet now... ⏳")
+    await q.answer("Checking... ⏳")
     user = update.effective_user
     wallet = db.get_wallet(user.id)
     if not wallet:
         await q.message.reply_text(
-            "⚠️ You haven't registered a wallet yet!\n"
-            "Use /register first, then send SOL.",
+            "⚠️ You haven't registered a wallet yet!\nUse /register first.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("👛 Register Wallet", callback_data="register")]
             ])
         )
         return
-    await q.message.reply_text(
-        f"🔍 *Scanning your wallet...*\n\n"
-        f"Looking for incoming SOL from:\n`{wallet}`\n\n"
-        f"This takes a few seconds...",
-        parse_mode="Markdown"
-    )
-    result = await check_wallet_for_payment(user.id, user.username, wallet)
-    if result["found"]:
+
+    # Only READ from DB — never credit here
+    sol, tokens, count = db.get_user_stats(str(user.id))
+    sol = sol or 0
+    tokens = tokens or 0
+
+    if count and count > 0:
         await q.message.reply_text(
-            f"🎉 *Payment Found & Processed!*\n\n"
-            f"💵 *{result['amount_sol']:.4f} SOL* received\n"
-            f"🪙 *{int(result['tokens']):,} {config.TOKEN_SYMBOL}* allocated\n"
-            f"👛 `{wallet}`\n"
-            f"🔗 TX: `{result['tx_sig'][:20]}...`\n\n"
-            f"{'✅ Tokens sent to your wallet!' if result.get('sent') else '📋 Tokens queued for airdrop!'}",
-            parse_mode="Markdown",
-            reply_markup=main_menu_keyboard()
-        )
-    elif result["already_recorded"]:
-        sol, tokens, count = db.get_user_stats(str(user.id))
-        await q.message.reply_text(
-            f"✅ *Your payment is already recorded!*\n\n"
+            f"✅ *Your payment is confirmed!*\n\n"
             f"💵 Total contributed: *{sol:.4f} SOL*\n"
-            f"🪙 Tokens allocated: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n\n"
-            f"Use /mystats to see your full history.",
+            f"🪙 Tokens allocated: *{int(tokens):,} {config.TOKEN_SYMBOL}*\n"
+            f"🔁 Transactions: *{count}*\n\n"
+            f"Your tokens have been sent to:\n`{wallet}`\n\n"
+            f"💡 If you don't see them in your wallet, enable 'show unverified tokens' in Phantom.",
             parse_mode="Markdown",
             reply_markup=main_menu_keyboard()
         )
     else:
         await q.message.reply_text(
             f"⏳ *No payment detected yet.*\n\n"
-            f"✅ *Step 1:* Your registered wallet:\n`{wallet}`\n\n"
-            f"✅ *Step 2:* Send SOL *from that wallet* to:\n`{config.PRESALE_WALLET}`\n\n"
-            f"✅ *Step 3:* Tap *Check Again* below\n\n"
-            f"⚠️ *Common mistakes:*\n"
-            f"• Sending from a *different* wallet than registered\n"
-            f"• Sending less than *{config.MIN_BUY_SOL} SOL* (minimum)\n"
-            f"• Transaction not confirmed yet (wait 30s)\n\n"
-            f"💡 Tap *Check Again* after sending — we'll scan your full history.",
+            f"✅ *Step 1:* Send SOL *from* your registered wallet:\n`{wallet}`\n\n"
+            f"✅ *Step 2:* *To* the presale wallet:\n`{config.PRESALE_WALLET}`\n\n"
+            f"✅ *Step 3:* Wait ~30 seconds\n\n"
+            f"⚠️ *Important:*\n"
+            f"• Send from the *exact* wallet above\n"
+            f"• Minimum *{config.MIN_BUY_SOL} SOL* (~$0.50)\n"
+            f"• Our monitor detects it automatically and sends tokens\n\n"
+            f"💡 You'll get a confirmation here the moment it's detected — "
+            f"no need to keep checking!",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Check Again", callback_data="sent_sol")],
@@ -395,108 +402,6 @@ async def sent_sol_callback(update, context):
             ])
         )
 
-
-async def check_wallet_for_payment(user_id, username, wallet: str) -> dict:
-    """
-    Scan for payments from a user's wallet to the presale wallet.
-    Strategy:
-      1. Check DB first — already recorded?
-      2. Scan last 100 txs on presale wallet (covers old transactions)
-      3. Also scan sender wallet's own tx history for any tx to presale wallet
-    """
-    result = {"found": False, "already_recorded": False,
-              "amount_sol": 0, "tokens": 0, "tx_sig": "", "sent": False}
-    try:
-        # Step 1: Check if already in DB by wallet
-        import sqlite3
-        conn = sqlite3.connect("presale.db")
-        row = conn.execute(
-            "SELECT tx_signature, amount_sol, tokens_allocated FROM contributions WHERE wallet=?",
-            (wallet,)
-        ).fetchone()
-        conn.close()
-        if row:
-            result["already_recorded"] = True
-            result["tx_sig"] = row[0]
-            result["amount_sol"] = row[1]
-            result["tokens"] = row[2]
-            return result
-
-        # Step 2: Scan last 100 txs on presale wallet
-        sigs_to_check = []
-        recent = solana_utils.get_recent_transactions(100)
-        for tx_info in recent:
-            sigs_to_check.append(tx_info["signature"])
-
-        # Step 3: Also scan the SENDER's own tx history
-        # This catches old transactions the monitor missed
-        try:
-            sender_txs = solana_utils._rpc({
-                "jsonrpc": "2.0", "id": 1,
-                "method": "getSignaturesForAddress",
-                "params": [wallet, {"limit": 20}]
-            })
-            if sender_txs and sender_txs.get("result"):
-                for tx_info in sender_txs["result"]:
-                    sig = tx_info["signature"]
-                    if sig not in sigs_to_check:
-                        sigs_to_check.append(sig)
-        except Exception as e:
-            logger.warning(f"Sender tx scan failed: {e}")
-
-        # Process all collected signatures
-        for sig in sigs_to_check:
-            if db.tx_exists(sig):
-                # Check if it's this user's tx
-                import sqlite3
-                conn = sqlite3.connect("presale.db")
-                row = conn.execute(
-                    "SELECT amount_sol, tokens_allocated FROM contributions WHERE tx_signature=? AND wallet=?",
-                    (sig, wallet)
-                ).fetchone()
-                conn.close()
-                if row:
-                    result["already_recorded"] = True
-                    result["tx_sig"] = sig
-                    result["amount_sol"] = row[0]
-                    result["tokens"] = row[1]
-                    return result
-                continue
-
-            parsed = solana_utils.get_sender_from_tx(sig)
-            if not parsed["success"]:
-                continue
-            if parsed["sender"] != wallet:
-                continue
-
-            # Found matching payment — process it
-            amount_sol = parsed["amount_sol"]
-            tokens = amount_sol / config.PRESALE_PRICE_SOL
-
-            saved = db.add_contribution(str(user_id), username, wallet, amount_sol, sig)
-            if not saved:
-                result["already_recorded"] = True
-                return result
-
-            logger.info(f"Manual check found TX {sig[:20]} | {amount_sol} SOL | {int(tokens):,} TKB")
-
-            tr = solana_utils.send_tokens(wallet, tokens)
-            if not tr["success"]:
-                # Retry once
-                import asyncio
-                await asyncio.sleep(3)
-                tr = solana_utils.send_tokens(wallet, tokens)
-
-            result["found"] = True
-            result["amount_sol"] = amount_sol
-            result["tokens"] = tokens
-            result["tx_sig"] = sig
-            result["sent"] = tr["success"]
-            return result
-
-    except Exception as e:
-        logger.error(f"check_wallet_for_payment error: {e}")
-    return result
 
 def build_bot():
     app = Application.builder().token(config.BOT_TOKEN).build()
@@ -782,155 +687,3 @@ def user_stats(user_id: str):
     return {"user_id": user_id, "wallet": db.get_wallet(user_id),
             "total_sol": round(sol or 0, 4), "total_tokens": int(tokens or 0),
             "tx_count": count or 0, "token_symbol": config.TOKEN_SYMBOL}
-
-@app.get("/presale/check")
-async def check_wallet_payment(wallet: str):
-    """
-    Called by mini app + bot when user taps I've Sent SOL.
-    Scans BOTH presale wallet history AND sender wallet history.
-    Works for old and new transactions.
-    """
-    if not solana_utils.is_valid_solana_address(wallet):
-        raise HTTPException(400, "Invalid wallet address")
-
-    try:
-        import sqlite3 as _sqlite3
-
-        # Step 1: check DB by wallet address first
-        conn = _sqlite3.connect("presale.db")
-        row = conn.execute(
-            "SELECT tx_signature, amount_sol, tokens_allocated FROM contributions WHERE wallet=?",
-            (wallet,)
-        ).fetchone()
-        conn.close()
-        if row:
-            return {
-                "found": False,
-                "already_recorded": True,
-                "tx_signature": row[0],
-                "amount_sol": row[1],
-                "tokens_allocated": int(row[2]),
-                "token_symbol": config.TOKEN_SYMBOL,
-            }
-
-        # Step 2: collect sigs from presale wallet (100) + sender wallet (20)
-        sigs = []
-        try:
-            for tx in solana_utils.get_recent_transactions(100):
-                sigs.append(tx["signature"])
-        except Exception as e:
-            logger.warning(f"Presale wallet scan failed: {e}")
-
-        try:
-            sender_data = solana_utils._rpc({
-                "jsonrpc": "2.0", "id": 1,
-                "method": "getSignaturesForAddress",
-                "params": [wallet, {"limit": 25}]
-            })
-            if sender_data and sender_data.get("result"):
-                for tx in sender_data["result"]:
-                    if tx["signature"] not in sigs:
-                        sigs.append(tx["signature"])
-        except Exception as e:
-            logger.warning(f"Sender wallet scan failed: {e}")
-
-        logger.info(f"check_wallet_payment: scanning {len(sigs)} txs for {wallet[:12]}")
-
-        # Step 3: process each sig
-        for sig in sigs:
-            if db.tx_exists(sig):
-                # Check if belongs to this wallet
-                conn = _sqlite3.connect("presale.db")
-                row = conn.execute(
-                    "SELECT amount_sol, tokens_allocated FROM contributions WHERE tx_signature=? AND wallet=?",
-                    (sig, wallet)
-                ).fetchone()
-                conn.close()
-                if row:
-                    return {
-                        "found": False, "already_recorded": True,
-                        "tx_signature": sig, "amount_sol": row[0],
-                        "tokens_allocated": int(row[1]),
-                        "token_symbol": config.TOKEN_SYMBOL,
-                    }
-                continue
-
-            parsed = solana_utils.get_sender_from_tx(sig)
-            if not parsed["success"] or parsed["sender"] != wallet:
-                continue
-
-            # Found — process it
-            amount_sol = parsed["amount_sol"]
-            tokens = amount_sol / config.PRESALE_PRICE_SOL
-            user_id = db.get_user_id_by_wallet(wallet)
-            username = db.get_username_by_wallet(wallet) if user_id else "unknown"
-
-            saved = db.add_contribution(user_id or wallet, username, wallet, amount_sol, sig)
-            if not saved:
-                return {"found": False, "already_recorded": True,
-                        "tx_signature": sig, "amount_sol": amount_sol,
-                        "tokens_allocated": int(tokens), "token_symbol": config.TOKEN_SYMBOL}
-
-            logger.info(f"check_wallet_payment FOUND: {sig[:20]} | {amount_sol} SOL | {int(tokens):,} TKB")
-
-            # Send tokens with retry
-            tr = {"success": False}
-            for attempt in range(3):
-                tr = solana_utils.send_tokens(wallet, tokens)
-                if tr["success"]:
-                    break
-                import asyncio as _asyncio
-                await _asyncio.sleep(3)
-
-            if not tr["success"]:
-                logger.error(f"Token send failed after 3 attempts for {sig[:20]}")
-
-            # Notify Telegram
-            if user_id and bot_app_global:
-                try:
-                    if tr["success"] and tr.get("tx_signature") not in (None, "QUEUED"):
-                        msg = (f"🎉 *Payment Confirmed!*\n\n"
-                               f"💵 *{amount_sol:.4f} SOL* received\n"
-                               f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* sent to your wallet!\n"
-                               f"🔗 TX: `{tr['tx_signature'][:30]}...`")
-                    else:
-                        msg = (f"✅ *Payment Confirmed!*\n\n"
-                               f"💵 *{amount_sol:.4f} SOL* received\n"
-                               f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* allocated\n"
-                               f"📋 Tokens airdropped after presale ends!")
-                    await bot_app_global.bot.send_message(
-                        chat_id=user_id, text=msg,
-                        parse_mode="Markdown", reply_markup=main_menu_keyboard()
-                    )
-                except Exception as e:
-                    logger.error(f"Telegram notify failed: {e}")
-
-            # Notify admins
-            for aid in config.ADMIN_IDS:
-                try:
-                    if bot_app_global:
-                        await bot_app_global.bot.send_message(
-                            chat_id=aid, parse_mode="Markdown",
-                            text=(f"💰 *New Contribution!*\n"
-                                  f"👤 {user_id or 'UNREGISTERED'}\n"
-                                  f"💵 {amount_sol:.4f} SOL → {int(tokens):,} TKB\n"
-                                  f"👛 `{wallet}`\n🔗 `{sig}`\n"
-                                  f"Token TX: `{tr.get('tx_signature','FAILED')}`"))
-                except Exception as e:
-                    logger.error(f"Admin notify failed: {e}")
-
-            return {
-                "found": True,
-                "amount_sol": amount_sol,
-                "tokens_allocated": int(tokens),
-                "token_symbol": config.TOKEN_SYMBOL,
-                "tx_signature": sig,
-                "tokens_sent": tr["success"],
-                "already_recorded": False,
-            }
-
-        return {"found": False, "already_recorded": False}
-
-    except Exception as e:
-        logger.error(f"check_wallet_payment error: {e}", exc_info=True)
-        raise HTTPException(500, f"Server error: {str(e)}")
