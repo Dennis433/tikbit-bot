@@ -234,7 +234,10 @@ def get_sender_from_tx(tx_signature: str) -> dict:
 
 def _load_airdrop_keypair():
     """Load the airdrop wallet keypair from AIRDROP_PRIVATE_KEY env var."""
-    key_str = config.AIRDROP_PRIVATE_KEY
+    # Read fresh from os.getenv every time — not cached config value
+    key_str = os.getenv("AIRDROP_PRIVATE_KEY") or config.AIRDROP_PRIVATE_KEY
+    key_str = key_str.strip() if key_str else None
+    logger.info(f"_load_airdrop_keypair: key present={bool(key_str)}, len={len(key_str) if key_str else 0}")
     if not key_str:
         raise ValueError("AIRDROP_PRIVATE_KEY not set in environment variables")
 
@@ -268,7 +271,8 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     result = {"success": False, "tx_signature": None, "message": ""}
 
     # Debug: log key status without exposing the key
-    key = config.AIRDROP_PRIVATE_KEY
+    key = os.getenv("AIRDROP_PRIVATE_KEY") or config.AIRDROP_PRIVATE_KEY
+    key = key.strip() if key else None
     logger.info(f"send_tokens called: {int(amount_tokens):,} TKB → {recipient_wallet[:12]}...")
     logger.info(f"AIRDROP_PRIVATE_KEY set: {bool(key)} | length: {len(key) if key else 0}")
 
@@ -294,10 +298,30 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
         mint_pubkey      = Pubkey.from_string(config.TOKEN_MINT)
         amount_raw       = int(amount_tokens * (10 ** config.TOKEN_DECIMALS))
 
-        TOKEN_PROGRAM_ID    = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
-        ASSOC_TOKEN_PROG_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
-        SYSTEM_PROGRAM      = Pubkey.from_string("11111111111111111111111111111111")
-        SYSVAR_RENT         = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
+        TOKEN_PROGRAM_CLASSIC = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+        TOKEN_PROGRAM_2022    = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
+        ASSOC_TOKEN_PROG_ID   = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
+        SYSTEM_PROGRAM        = Pubkey.from_string("11111111111111111111111111111111")
+        SYSVAR_RENT           = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
+
+        # Detect which token program owns this mint (classic SPL vs Token-2022)
+        mint_info = _rpc({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getAccountInfo",
+            "params": [str(mint_pubkey), {"encoding": "base64"}]
+        })
+        owner_program = None
+        try:
+            owner_program = mint_info["result"]["value"]["owner"]
+        except Exception:
+            pass
+
+        if owner_program == "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb":
+            TOKEN_PROGRAM_ID = TOKEN_PROGRAM_2022
+            logger.info("Mint uses Token-2022 program")
+        else:
+            TOKEN_PROGRAM_ID = TOKEN_PROGRAM_CLASSIC
+            logger.info(f"Mint uses classic SPL Token program (owner: {owner_program})")
 
         def get_ata(owner: Pubkey, mint: Pubkey) -> Pubkey:
             seeds = [bytes(owner), bytes(TOKEN_PROGRAM_ID), bytes(mint)]
