@@ -609,6 +609,32 @@ async def monitor_transactions(bot_app):
                     except Exception as e:
                         logger.error(f"Failed to notify admin {aid}: {e}")
 
+                # Announce the buy to the community group (social proof / hype)
+                if config.COMMUNITY_CHAT_ID and tr["success"]:
+                    try:
+                        short_wallet = sender[:4] + "..." + sender[-4:]
+                        usd_value = amount_sol * config.SOL_PRICE_USD
+                        community_msg = (
+                            f"🚀 *NEW {config.TOKEN_NAME} BUY!* 🚀\n\n"
+                            f"💎 Someone just grabbed *{int(tokens):,} {config.TOKEN_SYMBOL}*!\n"
+                            f"💰 Bought with *{amount_sol:.3f} SOL*\n"
+                            f"👛 Wallet: `{short_wallet}`\n\n"
+                            f"📈 The presale is heating up — don't miss out!\n"
+                            f"🔥 Join now 👇"
+                        )
+                        await bot_app.bot.send_message(
+                            chat_id=config.COMMUNITY_CHAT_ID,
+                            text=community_msg,
+                            parse_mode="Markdown",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🚀 Buy " + config.TOKEN_SYMBOL + " Now",
+                                                      url=f"https://t.me/{config.BOT_USERNAME}")],
+                            ])
+                        )
+                        logger.info("Community announcement sent ✅")
+                    except Exception as e:
+                        logger.error(f"Failed to announce to community: {e}")
+
         except Exception as e:
             logger.error(f"Monitor loop error: {e}", exc_info=True)
             await asyncio.sleep(20)

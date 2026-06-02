@@ -5,6 +5,12 @@ load_dotenv()
 
 # Telegram
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "Tikbitbot")  # without @, used for buy links
+
+# Community group chat ID for buy announcements (e.g. -1001234567890)
+# Leave empty to disable announcements
+_community_raw = os.getenv("COMMUNITY_CHAT_ID", "").strip()
+COMMUNITY_CHAT_ID = int(_community_raw) if _community_raw and _community_raw.lstrip("-").isdigit() else None
 
 # Solana RPC
 RPC_URL = os.getenv("RPC_URL", "https://api.mainnet-beta.solana.com")
@@ -27,6 +33,7 @@ SOFT_CAP_SOL      = 100
 MIN_BUY_SOL       = 0.006    # Minimum ~$0.50 at $80/SOL
 MAX_BUY_SOL       = 10
 PRESALE_ACTIVE    = True
+SOL_PRICE_USD     = float(os.getenv("SOL_PRICE_USD", "80"))  # For display in announcements
 
 # Mini app URL
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tikbit-bot.onrender.com/miniapp")
