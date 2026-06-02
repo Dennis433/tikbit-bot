@@ -264,152 +264,99 @@ def _load_airdrop_keypair():
 
 def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     """
-    Send TKB tokens using pure solders — no spl-token package needed.
-    Builds transfer_checked instruction manually.
-    Requires AIRDROP_PRIVATE_KEY in environment.
+    Send TKB tokens using solana-py + spl library (bundled with solana package).
+    Auto-detects classic SPL vs Token-2022.
     """
     result = {"success": False, "tx_signature": None, "message": ""}
 
-    # Debug: log key status without exposing the key
-    key = os.getenv("AIRDROP_PRIVATE_KEY") or config.AIRDROP_PRIVATE_KEY
-    key = key.strip() if key else None
-    logger.info(f"send_tokens called: {int(amount_tokens):,} TKB → {recipient_wallet[:12]}...")
+    key = config.AIRDROP_PRIVATE_KEY
+    logger.info(f"send_tokens called: {int(amount_tokens):,} TKB -> {recipient_wallet[:12]}...")
     logger.info(f"AIRDROP_PRIVATE_KEY set: {bool(key)} | length: {len(key) if key else 0}")
 
     if not key:
         logger.error("AIRDROP_PRIVATE_KEY is not set! Tokens queued.")
         result["success"]      = True
         result["tx_signature"] = "QUEUED"
-        result["message"]      = f"✅ {int(amount_tokens):,} TKB queued — set AIRDROP_PRIVATE_KEY on Render"
+        result["message"]      = f"{int(amount_tokens):,} TKB queued - set AIRDROP_PRIVATE_KEY"
         return result
 
     try:
-        import struct, base64
         from solders.keypair import Keypair
         from solders.pubkey import Pubkey
-        from solders.hash import Hash
-        from solders.instruction import Instruction, AccountMeta
-        from solders.message import Message
-        from solders.transaction import Transaction as SoldersTransaction
+        from solana.rpc.api import Client
+        from solana.rpc.types import TxOpts
+        from solana.rpc.commitment import Confirmed
+        from spl.token.client import Token
+        from spl.token.constants import TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 
         keypair = _load_airdrop_keypair()
+        client  = Client(config.RPC_URL)
+
         sender_pubkey    = keypair.pubkey()
         recipient_pubkey = Pubkey.from_string(recipient_wallet)
         mint_pubkey      = Pubkey.from_string(config.TOKEN_MINT)
         amount_raw       = int(amount_tokens * (10 ** config.TOKEN_DECIMALS))
 
-        TOKEN_PROGRAM_CLASSIC = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
-        TOKEN_PROGRAM_2022    = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
-        ASSOC_TOKEN_PROG_ID   = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
-        SYSTEM_PROGRAM        = Pubkey.from_string("11111111111111111111111111111111")
-        SYSVAR_RENT           = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
-
-        # Detect which token program owns this mint (classic SPL vs Token-2022)
-        mint_info = _rpc({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "getAccountInfo",
-            "params": [str(mint_pubkey), {"encoding": "base64"}]
-        })
-        owner_program = None
-        try:
-            owner_program = mint_info["result"]["value"]["owner"]
-        except Exception:
-            pass
-
-        if owner_program == "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb":
-            TOKEN_PROGRAM_ID = TOKEN_PROGRAM_2022
-            logger.info("Mint uses Token-2022 program")
+        # Detect token program owner
+        mint_info = client.get_account_info(mint_pubkey)
+        owner = str(mint_info.value.owner) if mint_info.value else ""
+        if owner == str(TOKEN_2022_PROGRAM_ID):
+            program_id = TOKEN_2022_PROGRAM_ID
+            logger.info("Using Token-2022 program")
         else:
-            TOKEN_PROGRAM_ID = TOKEN_PROGRAM_CLASSIC
-            logger.info(f"Mint uses classic SPL Token program (owner: {owner_program})")
+            program_id = TOKEN_PROGRAM_ID
+            logger.info(f"Using classic SPL Token program (owner={owner})")
 
-        def get_ata(owner: Pubkey, mint: Pubkey) -> Pubkey:
-            seeds = [bytes(owner), bytes(TOKEN_PROGRAM_ID), bytes(mint)]
-            return Pubkey.find_program_address(seeds, ASSOC_TOKEN_PROG_ID)[0]
+        # Use the Token client which handles ATA creation + transfer
+        token = Token(
+            conn=client,
+            pubkey=mint_pubkey,
+            program_id=program_id,
+            payer=keypair,
+        )
 
-        sender_ata    = get_ata(sender_pubkey, mint_pubkey)
-        recipient_ata = get_ata(recipient_pubkey, mint_pubkey)
+        # Get or create the recipient's associated token account
+        recipient_ata = token.create_associated_token_account(
+            owner=recipient_pubkey,
+            skip_confirmation=False,
+        ) if _ata_missing(client, recipient_pubkey, mint_pubkey, program_id) else \
+            _derive_ata(recipient_pubkey, mint_pubkey, program_id)
 
-        logger.info(f"Sender ATA:    {sender_ata}")
-        logger.info(f"Recipient ATA: {recipient_ata}")
+        sender_ata = _derive_ata(sender_pubkey, mint_pubkey, program_id)
 
-        # Get latest blockhash
-        bh_data = _rpc({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "getLatestBlockhash",
-            "params": [{"commitment": "finalized"}]
-        })
-        blockhash_str = bh_data["result"]["value"]["blockhash"]
-        blockhash = Hash.from_string(blockhash_str)
-
-        # Check if recipient ATA exists
-        ata_info = _rpc({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "getAccountInfo",
-            "params": [str(recipient_ata), {"encoding": "base64"}]
-        })
-        needs_ata = ata_info["result"]["value"] is None
-
-        instructions = []
-
-        # Create recipient ATA if needed
-        if needs_ata:
-            logger.info(f"Creating ATA for {recipient_wallet}")
-            ata_accounts = [
-                AccountMeta(sender_pubkey,    True,  True),
-                AccountMeta(recipient_ata,    False, True),
-                AccountMeta(recipient_pubkey, False, False),
-                AccountMeta(mint_pubkey,      False, False),
-                AccountMeta(SYSTEM_PROGRAM,   False, False),
-                AccountMeta(TOKEN_PROGRAM_ID, False, False),
-                AccountMeta(SYSVAR_RENT,      False, False),
-            ]
-            create_ata_ix = Instruction(ASSOC_TOKEN_PROG_ID, bytes([]), ata_accounts)
-            instructions.append(create_ata_ix)
-
-        # Build transfer_checked instruction
-        # Discriminator 12 = transfer_checked, then u64 amount, then u8 decimals
-        ix_data = struct.pack("<BQB", 12, amount_raw, config.TOKEN_DECIMALS)
-        transfer_accounts = [
-            AccountMeta(sender_ata,      False, True),
-            AccountMeta(mint_pubkey,     False, False),
-            AccountMeta(recipient_ata,   False, True),
-            AccountMeta(sender_pubkey,   True,  False),
-        ]
-        transfer_ix = Instruction(TOKEN_PROGRAM_ID, ix_data, transfer_accounts)
-        instructions.append(transfer_ix)
-
-        # Build and sign transaction
-        msg = Message.new_with_blockhash(instructions, sender_pubkey, blockhash)
-        tx  = SoldersTransaction.new_unsigned(msg)
-        tx.sign([keypair], blockhash)
-
-        tx_b64 = base64.b64encode(bytes(tx)).decode()
-
-        # Send transaction
-        send_resp = _rpc({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "sendTransaction",
-            "params": [tx_b64, {
-                "encoding": "base64",
-                "preflightCommitment": "confirmed",
-                "skipPreflight": False
-            }]
-        })
-
-        if send_resp and "result" in send_resp and send_resp["result"]:
-            sig = send_resp["result"]
-            logger.info(f"✅ Token TX: {sig} | {int(amount_tokens):,} TKB → {recipient_wallet}")
-            result["success"]      = True
-            result["tx_signature"] = sig
-            result["message"]      = f"✅ {int(amount_tokens):,} TKB sent! TX: {sig}"
-        else:
-            err = send_resp.get("error", {}) if send_resp else "No response"
-            raise Exception(f"RPC sendTransaction failed: {err}")
-
+        # Transfer
+        resp = token.transfer_checked(
+            source=sender_ata,
+            dest=recipient_ata,
+            owner=keypair,
+            amount=amount_raw,
+            decimals=config.TOKEN_DECIMALS,
+            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed),
+        )
+        sig = str(resp.value)
+        logger.info(f"Token TX: {sig} | {int(amount_tokens):,} TKB -> {recipient_wallet}")
+        result["success"]      = True
+        result["tx_signature"] = sig
+        result["message"]      = f"{int(amount_tokens):,} TKB sent! TX: {sig}"
         return result
 
     except Exception as e:
         logger.error(f"Token send error: {e}", exc_info=True)
-        result["message"] = f"❌ Token send failed: {str(e)}"
+        result["message"] = f"Token send failed: {str(e)}"
         return result
+
+
+def _derive_ata(owner, mint, program_id):
+    from solders.pubkey import Pubkey
+    ASSOC = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
+    seeds = [bytes(owner), bytes(program_id), bytes(mint)]
+    return Pubkey.find_program_address(seeds, ASSOC)[0]
+
+
+def _ata_missing(client, owner, mint, program_id):
+    ata = _derive_ata(owner, mint, program_id)
+    try:
+        info = client.get_account_info(ata)
+        return info.value is None
+    except Exception:
+        return True
