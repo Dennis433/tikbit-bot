@@ -264,20 +264,19 @@ def _load_airdrop_keypair():
 
 def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     """
-    Send TKB tokens using solana-py + spl library (bundled with solana package).
-    Auto-detects classic SPL vs Token-2022.
+    Send TKB tokens using solana-py + spl Token client.
+    Uses get_or_create to safely handle existing/missing ATAs.
     """
     result = {"success": False, "tx_signature": None, "message": ""}
 
     key = config.AIRDROP_PRIVATE_KEY
-    logger.info(f"send_tokens called: {int(amount_tokens):,} TKB -> {recipient_wallet[:12]}...")
-    logger.info(f"AIRDROP_PRIVATE_KEY set: {bool(key)} | length: {len(key) if key else 0}")
+    logger.info(f"send_tokens: {int(amount_tokens):,} TKB -> {recipient_wallet[:12]}...")
 
     if not key:
-        logger.error("AIRDROP_PRIVATE_KEY is not set! Tokens queued.")
-        result["success"]      = True
+        logger.error("AIRDROP_PRIVATE_KEY not set! Queued.")
+        result["success"] = True
         result["tx_signature"] = "QUEUED"
-        result["message"]      = f"{int(amount_tokens):,} TKB queued - set AIRDROP_PRIVATE_KEY"
+        result["message"] = f"{int(amount_tokens):,} TKB queued"
         return result
 
     try:
@@ -289,42 +288,45 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
         from spl.token.client import Token
         from spl.token.constants import TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 
-        keypair = _load_airdrop_keypair()
-        client  = Client(config.RPC_URL)
-
+        keypair          = _load_airdrop_keypair()
+        client           = Client(config.RPC_URL)
         sender_pubkey    = keypair.pubkey()
         recipient_pubkey = Pubkey.from_string(recipient_wallet)
         mint_pubkey      = Pubkey.from_string(config.TOKEN_MINT)
         amount_raw       = int(amount_tokens * (10 ** config.TOKEN_DECIMALS))
 
-        # Detect token program owner
+        # Detect token program
         mint_info = client.get_account_info(mint_pubkey)
         owner = str(mint_info.value.owner) if mint_info.value else ""
-        if owner == str(TOKEN_2022_PROGRAM_ID):
-            program_id = TOKEN_2022_PROGRAM_ID
-            logger.info("Using Token-2022 program")
-        else:
-            program_id = TOKEN_PROGRAM_ID
-            logger.info(f"Using classic SPL Token program (owner={owner})")
+        program_id = TOKEN_2022_PROGRAM_ID if owner == str(TOKEN_2022_PROGRAM_ID) else TOKEN_PROGRAM_ID
+        logger.info(f"Token program: {program_id}")
 
-        # Use the Token client which handles ATA creation + transfer
-        token = Token(
-            conn=client,
-            pubkey=mint_pubkey,
-            program_id=program_id,
-            payer=keypair,
-        )
+        token = Token(conn=client, pubkey=mint_pubkey, program_id=program_id, payer=keypair)
 
-        # Get or create the recipient's associated token account
-        recipient_ata = token.create_associated_token_account(
-            owner=recipient_pubkey,
-            skip_confirmation=False,
-        ) if _ata_missing(client, recipient_pubkey, mint_pubkey, program_id) else \
-            _derive_ata(recipient_pubkey, mint_pubkey, program_id)
+        # Derive ATAs deterministically
+        sender_ata    = _derive_ata(sender_pubkey, mint_pubkey, program_id)
+        recipient_ata = _derive_ata(recipient_pubkey, mint_pubkey, program_id)
+        logger.info(f"Sender ATA: {sender_ata}")
+        logger.info(f"Recipient ATA: {recipient_ata}")
 
-        sender_ata = _derive_ata(sender_pubkey, mint_pubkey, program_id)
+        # Create recipient ATA only if missing — use get_or_create pattern
+        rec_info = client.get_account_info(recipient_ata)
+        if rec_info.value is None:
+            logger.info("Creating recipient ATA via Token client...")
+            try:
+                token.create_associated_token_account(
+                    owner=recipient_pubkey,
+                    skip_confirmation=False,
+                )
+                logger.info("Recipient ATA created")
+            except Exception as ata_err:
+                # ATA may have been created in a race — check again
+                logger.warning(f"ATA create warning: {ata_err}")
+                rec_info2 = client.get_account_info(recipient_ata)
+                if rec_info2.value is None:
+                    raise
 
-        # Transfer
+        # Transfer tokens
         resp = token.transfer_checked(
             source=sender_ata,
             dest=recipient_ata,
@@ -334,7 +336,7 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
             opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed),
         )
         sig = str(resp.value)
-        logger.info(f"Token TX: {sig} | {int(amount_tokens):,} TKB -> {recipient_wallet}")
+        logger.info(f"Token TX: {sig}")
         result["success"]      = True
         result["tx_signature"] = sig
         result["message"]      = f"{int(amount_tokens):,} TKB sent! TX: {sig}"
@@ -345,10 +347,9 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
         result["message"] = f"Token send failed: {str(e)}"
         return result
 
-
 def _derive_ata(owner, mint, program_id):
     from solders.pubkey import Pubkey
-    ASSOC = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bz")
+    ASSOC = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
     seeds = [bytes(owner), bytes(program_id), bytes(mint)]
     return Pubkey.find_program_address(seeds, ASSOC)[0]
 
