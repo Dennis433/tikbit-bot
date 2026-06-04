@@ -13,7 +13,14 @@ _community_raw = os.getenv("COMMUNITY_CHAT_ID", "").strip()
 COMMUNITY_CHAT_ID = int(_community_raw) if _community_raw and _community_raw.lstrip("-").isdigit() else None
 
 # Solana RPC
-RPC_URL = os.getenv("RPC_URL", "https://api.mainnet-beta.solana.com")
+# If HELIUS_API_KEY is set, we use the Helius endpoint (much higher rate
+# limits than the public node) and it takes precedence over any RPC_URL.
+# Get a free key at https://dashboard.helius.dev → set HELIUS_API_KEY on Render.
+HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "").strip()
+if HELIUS_API_KEY:
+    RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
+else:
+    RPC_URL = os.getenv("RPC_URL", "https://api.mainnet-beta.solana.com").strip()
 
 # ── WALLETS ──
 PRESALE_WALLET = os.getenv("PRESALE_WALLET", "3erMv1GL79XMcPZFLiwbNApVbh9YPzLzEX3nrmNNbNjm")
@@ -34,6 +41,14 @@ MIN_BUY_SOL       = 0.006    # Minimum ~$0.50 at $80/SOL
 MAX_BUY_SOL       = 10
 PRESALE_ACTIVE    = True
 SOL_PRICE_USD     = float(os.getenv("SOL_PRICE_USD", "80"))  # For display in announcements
+
+# ── REFERRALS ──
+# Reward paid to a referrer when someone they invited makes their first
+# qualifying buy. Paid in TKB, sent from the airdrop wallet.
+REFERRAL_REWARD_TKB = int(os.getenv("REFERRAL_REWARD_TKB", "50"))
+# A referee's buy must be at least this many SOL to trigger a referral reward.
+# Defaults to the normal minimum buy. Raise it to reduce self-referral farming.
+REFERRAL_MIN_BUY_SOL = float(os.getenv("REFERRAL_MIN_BUY_SOL", str(MIN_BUY_SOL)))
 
 # Mini app URL
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tikbit-bot.onrender.com/miniapp")

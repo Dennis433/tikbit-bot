@@ -32,6 +32,7 @@ def main_menu_keyboard():
         [InlineKeyboardButton("👛 Register Wallet", callback_data="register"),
          InlineKeyboardButton("📋 My Stats", callback_data="mystats")],
         [InlineKeyboardButton("ℹ️ How to Buy", callback_data="howtobuy")],
+        [InlineKeyboardButton("🎁 Refer & Earn", callback_data="refer")],
         [InlineKeyboardButton("📱 Connect Wallet Guide", callback_data="connect_guide")],
         [InlineKeyboardButton("👥 Community", url="https://t.me/tikbitcoincommunity"),
          InlineKeyboardButton("🐦 Twitter/X", url="https://x.com/TikBitcoin")],
@@ -75,6 +76,25 @@ def connect_guide_text():
 async def start(update, context):
     db.init_db()
     u = update.effective_user
+
+    # ── Deep-link payloads (t.me/<bot>?start=<payload>) ──
+    args = context.args or []
+    if args:
+        payload = args[0]
+        if payload.startswith("ref_"):
+            ref = payload[4:]
+            if ref.isdigit():
+                # Record who invited this user (no-op if self / already referred)
+                if db.record_referral(u.id, int(ref)):
+                    logger.info(f"Referral recorded: {u.id} invited by {ref}")
+            # fall through to normal welcome below
+        elif payload == "refer":
+            await refer_command(update, context)
+            return
+        elif payload == "buy":
+            await buy(update, context)
+            return
+
     tps = int(1 / config.PRESALE_PRICE_SOL)
     await update.message.reply_text(
         f"👋 Welcome *{u.first_name}* to the *{config.TOKEN_NAME} Presale!*\n\n"
@@ -162,6 +182,23 @@ async def buy(update, context):
     if not config.PRESALE_ACTIVE:
         await msg.reply_text("⏸ Presale paused.")
         return
+
+    # In a group, never dump the wallet/address inline — send users to a
+    # private chat with the bot via a deep link (web_app buttons also can't
+    # be used in groups). Keeps wallet details private and the group clean.
+    chat = update.effective_chat
+    if chat and chat.type in ("group", "supergroup"):
+        await msg.reply_text(
+            f"💰 Buy ${config.TOKEN_SYMBOL} in a private chat with me 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"💰 Buy {config.TOKEN_SYMBOL}",
+                                      url=f"https://t.me/{config.BOT_USERNAME}?start=buy")],
+                [InlineKeyboardButton("🎁 Refer & Earn",
+                                      url=f"https://t.me/{config.BOT_USERNAME}?start=refer")],
+            ])
+        )
+        return
+
     user = update.effective_user
     wallet = db.get_wallet(user.id)
     tps = int(1 / config.PRESALE_PRICE_SOL)
@@ -332,6 +369,56 @@ async def admin_panel(update, context):
         parse_mode="Markdown"
     )
 
+async def refer_command(update, context):
+    q = update.callback_query
+    msg = q.message if q else update.message
+    if q: await q.answer()
+    user = update.effective_user
+    link = f"https://t.me/{config.BOT_USERNAME}?start=ref_{user.id}"
+    paid = db.get_referral_count(user.id)
+    has_wallet = bool(db.get_wallet(user.id))
+    wallet_note = (
+        "✅ Your wallet is registered — you're ready to earn!"
+        if has_wallet else
+        "⚠️ Register your wallet first (/register) so we can pay your rewards!"
+    )
+    await msg.reply_text(
+        f"🎁 *Refer & Earn {config.REFERRAL_REWARD_TKB} {config.TOKEN_SYMBOL}!*\n\n"
+        f"Share your personal link. When someone you invite makes their "
+        f"first buy, you instantly get *{config.REFERRAL_REWARD_TKB} "
+        f"{config.TOKEN_SYMBOL}* sent to your registered wallet.\n\n"
+        f"🔗 *Your referral link:*\n`{link}`\n\n"
+        f"🏆 Successful referrals so far: *{paid}*\n\n"
+        f"{wallet_note}",
+        parse_mode="Markdown",
+        reply_markup=main_menu_keyboard()
+    )
+
+async def welcome_new_member(update, context):
+    """Greet new members joining the group and show a Buy button."""
+    msg = update.message
+    if not msg or not msg.new_chat_members:
+        return
+    tps = int(1 / config.PRESALE_PRICE_SOL)
+    for member in msg.new_chat_members:
+        if member.is_bot:
+            continue
+        await msg.reply_text(
+            f"👋 Welcome {member.mention_html()} to <b>{config.TOKEN_NAME}</b>!\n\n"
+            f"💎 The ${config.TOKEN_SYMBOL} presale is LIVE — "
+            f"{tps:,} {config.TOKEN_SYMBOL} per SOL.\n"
+            f"📦 Min {config.MIN_BUY_SOL} SOL | Max {config.MAX_BUY_SOL} SOL\n\n"
+            f"Tap below to buy in a private chat with me 👇",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"💰 Buy {config.TOKEN_SYMBOL}",
+                                      url=f"https://t.me/{config.BOT_USERNAME}?start=buy")],
+                [InlineKeyboardButton("🎁 Refer & Earn",
+                                      url=f"https://t.me/{config.BOT_USERNAME}?start=refer")],
+            ])
+        )
+
+
 async def button_handler(update, context):
     data = update.callback_query.data
     handlers = {
@@ -339,6 +426,7 @@ async def button_handler(update, context):
         "howtobuy": how_to_buy,
         "connect_guide": connect_guide_callback,
         "sent_sol": sent_sol_callback,
+        "refer": refer_command,
     }
     if data in handlers:
         await handlers[data](update, context)
@@ -420,12 +508,80 @@ def build_bot():
     for cmd, fn in [("start",start),("help",help_command),("buy",buy),
                     ("mystats",my_stats),("status",presale_status),
                     ("adminpanel",admin_panel),("connectguide",connect_guide_command),
+                    ("refer",refer_command),
                     ("verify",verify_start)]:
         app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(reg)
     app.add_handler(ver)
+    # Greet new members who join the group
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     app.add_handler(CallbackQueryHandler(button_handler))
     return app
+
+async def redeliver_pending(bot_app):
+    """
+    Safety net: re-attempt delivery for any contribution whose tokens haven't
+    been confirmed delivered yet. Double-send-safe: if a prior attempt already
+    broadcast a delivery signature, we CHECK that signature first and only
+    resend when it has truly failed on-chain (never on a still-pending one).
+    """
+    if not config.AIRDROP_PRIVATE_KEY:
+        return  # nothing to send without a key; don't burn retry attempts
+    try:
+        pending = db.get_undelivered_contributions()
+    except Exception as e:
+        logger.error(f"redeliver: could not read pending contributions: {e}")
+        return
+
+    for row in pending:
+        sig    = row["tx_signature"]
+        wallet = row["wallet"]
+        tokens = row["tokens_allocated"]
+        prior  = row.get("token_tx")
+
+        # If we already broadcast a delivery tx, verify it before resending.
+        if prior and prior != "QUEUED":
+            status = solana_utils.confirm_signature(prior, tries=3, delay=2)
+            if status == "confirmed":
+                db.mark_token_sent(sig, prior)
+                logger.info(f"redeliver: prior tx {prior[:20]} confirmed -> delivered")
+                continue
+            if status == "unknown":
+                logger.info(f"redeliver: prior tx {prior[:20]} still pending; leaving for next loop")
+                continue
+            logger.warning(f"redeliver: prior tx {prior[:20]} failed on-chain; resending")
+
+        db.bump_delivery_attempts(sig)
+        tr = solana_utils.send_tokens(wallet, tokens)
+
+        if tr["success"] and tr.get("tx_signature") not in (None, "QUEUED"):
+            db.mark_token_sent(sig, tr.get("tx_signature"))
+            logger.info(
+                f"redeliver: delivered {int(tokens):,} {config.TOKEN_SYMBOL} -> "
+                f"{wallet[:12]} (tx {tr['tx_signature'][:20]})"
+            )
+            uid = row.get("user_id")
+            if uid and str(uid).isdigit():
+                try:
+                    await bot_app.bot.send_message(
+                        chat_id=int(uid),
+                        text=(
+                            f"🎉 *{int(tokens):,} {config.TOKEN_SYMBOL} delivered!*\n\n"
+                            f"👛 `{wallet}`\n🔗 `{tr['tx_signature'][:30]}...`"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"redeliver: failed to notify {uid}: {e}")
+        elif tr.get("submitted") and tr.get("tx_signature"):
+            db.set_pending_token_tx(sig, tr["tx_signature"])
+            logger.warning(
+                f"redeliver: submitted but unconfirmed for {sig[:20]} "
+                f"(tx {tr['tx_signature']}); will verify next loop"
+            )
+        else:
+            logger.warning(f"redeliver: still undelivered {sig[:20]}: {tr['message']}")
+
 
 async def monitor_transactions(bot_app):
     """
@@ -462,6 +618,9 @@ async def monitor_transactions(bot_app):
     while True:
         try:
             await asyncio.sleep(20)
+            # Safety net first: re-deliver any confirmed buys whose tokens
+            # haven't landed yet (double-send-safe). Fixes silent non-credits.
+            await redeliver_pending(bot_app)
             recent = solana_utils.get_recent_transactions(25)
 
             for tx_info in recent:
@@ -519,29 +678,28 @@ async def monitor_transactions(bot_app):
 
                 logger.info(f"TX {sig[:20]} saved to DB ✅")
 
-                # Send tokens — retry up to 3 times
-                tr = {"success": False, "tx_signature": None, "message": "Not attempted"}
-                for attempt in range(1, 4):
-                    tr = solana_utils.send_tokens(sender, tokens)
-                    if tr["success"]:
-                        logger.info(
-                            f"Tokens sent ✅ | Attempt {attempt} | "
-                            f"Token TX: {tr.get('tx_signature','QUEUED')}"
-                        )
-                        break
-                    else:
-                        logger.warning(
-                            f"Token send attempt {attempt}/3 failed: {tr['message']}"
-                        )
-                        if attempt < 3:
-                            await asyncio.sleep(5)
-
-                if not tr["success"]:
-                    logger.error(
-                        f"ALL 3 TOKEN SEND ATTEMPTS FAILED for {sig[:20]} | "
-                        f"Wallet: {sender} | Tokens: {int(tokens):,} | "
-                        f"Error: {tr['message']} | "
-                        f"MANUAL AIRDROP REQUIRED"
+                # Send tokens — ONE attempt here. The redelivery pass at the top
+                # of the loop safely retries anything that doesn't confirm, and
+                # checks the prior signature first so nobody is ever double-sent.
+                db.bump_delivery_attempts(sig)
+                tr = solana_utils.send_tokens(sender, tokens)
+                if tr["success"] and tr.get("tx_signature") not in (None, "QUEUED"):
+                    db.mark_token_sent(sig, tr.get("tx_signature"))
+                    logger.info(f"Tokens sent ✅ | Token TX: {tr.get('tx_signature')}")
+                elif tr.get("tx_signature") == "QUEUED":
+                    logger.info(f"No airdrop key set — {sig[:20]} recorded, pending delivery")
+                elif tr.get("submitted") and tr.get("tx_signature"):
+                    # Broadcast but not yet confirmed — store the sig so the
+                    # redelivery pass re-CHECKS it (never blindly resends).
+                    db.set_pending_token_tx(sig, tr["tx_signature"])
+                    logger.warning(
+                        f"Token TX submitted but unconfirmed for {sig[:20]} — "
+                        f"will verify next loop: {tr['tx_signature']}"
+                    )
+                else:
+                    logger.warning(
+                        f"Token send not completed for {sig[:20]}: {tr['message']} "
+                        f"— will retry next loop"
                     )
 
                 # Notify buyer via Telegram (if registered)
@@ -564,14 +722,22 @@ async def monitor_transactions(bot_app):
                                 f"👛 Wallet: `{sender}`\n\n"
                                 f"📋 Your tokens are recorded and will be airdropped after presale ends!"
                             )
+                        elif tr.get("submitted") and tr.get("tx_signature"):
+                            # Broadcast, still confirming — reassure, don't alarm.
+                            msg = (
+                                f"✅ *Payment Confirmed!*\n\n"
+                                f"💵 Received: *{amount_sol:.4f} SOL*\n"
+                                f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* is on its way to:\n"
+                                f"`{sender}`\n\n"
+                                f"⏳ Finalizing on-chain now — it'll land in your wallet shortly."
+                            )
                         else:
                             msg = (
-                                f"⚠️ *Payment Received — Token Send Issue*\n\n"
+                                f"✅ *Payment Received!*\n\n"
                                 f"💵 We received your *{amount_sol:.4f} SOL* ✅\n"
-                                f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* is allocated to you.\n\n"
-                                f"Our team will manually send your tokens shortly.\n"
-                                f"Contact @tikbitcoincommunity if needed.\n"
-                                f"TX: `{sig[:30]}...`"
+                                f"🪙 *{int(tokens):,} {config.TOKEN_SYMBOL}* is allocated to you "
+                                f"and will be delivered automatically very shortly.\n\n"
+                                f"👛 Wallet: `{sender}`"
                             )
                         await bot_app.bot.send_message(
                             chat_id=user_id,
@@ -587,6 +753,72 @@ async def monitor_transactions(bot_app):
                         f"Unregistered wallet {sender[:12]} sent {amount_sol:.4f} SOL — "
                         f"contribution recorded, no Telegram notification"
                     )
+
+                # ── REFERRAL REWARD ──
+                # Pay the referrer when their referee makes a qualifying buy.
+                # Hooks into the monitor (the single source of truth for
+                # confirmed on-chain payments), pays at most once per referee,
+                # and never blocks the buyer's own flow.
+                if user_id and amount_sol >= config.REFERRAL_MIN_BUY_SOL:
+                    try:
+                        referrer_id = db.claim_referral(user_id)
+                        if referrer_id:
+                            referrer_wallet = db.get_wallet(referrer_id)
+                            if not referrer_wallet:
+                                # Referrer hasn't registered a wallet yet —
+                                # release so it can pay on a later buy/check.
+                                db.release_referral(user_id)
+                                logger.info(
+                                    f"Referral for {user_id}: referrer {referrer_id} "
+                                    f"has no wallet yet — held as pending"
+                                )
+                            else:
+                                rr = solana_utils.send_tokens(
+                                    referrer_wallet, config.REFERRAL_REWARD_TKB
+                                )
+                                if rr["success"]:
+                                    db.mark_referral_paid(user_id)
+                                    logger.info(
+                                        f"Referral paid ✅ {config.REFERRAL_REWARD_TKB} "
+                                        f"{config.TOKEN_SYMBOL} -> referrer {referrer_id}"
+                                    )
+                                    try:
+                                        await bot_app.bot.send_message(
+                                            chat_id=referrer_id,
+                                            text=(
+                                                f"🎉 *Referral Reward!*\n\n"
+                                                f"Someone you invited just bought "
+                                                f"${config.TOKEN_SYMBOL} — "
+                                                f"*{config.REFERRAL_REWARD_TKB} "
+                                                f"{config.TOKEN_SYMBOL}* has been sent "
+                                                f"to your wallet!\n👛 `{referrer_wallet}`"
+                                            ),
+                                            parse_mode="Markdown",
+                                            reply_markup=main_menu_keyboard()
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"Failed to notify referrer {referrer_id}: {e}")
+                                else:
+                                    if rr.get("submitted"):
+                                        # Broadcast but unconfirmed — do NOT release
+                                        # (releasing would let it pay again = double
+                                        # reward). Leave it claimed; flag for admin.
+                                        logger.warning(
+                                            f"Referral payout submitted but unconfirmed for "
+                                            f"referee {user_id} -> referrer {referrer_id} "
+                                            f"(tx {rr.get('tx_signature')}); held, NOT retried "
+                                            f"to avoid double-pay"
+                                        )
+                                    else:
+                                        # Nothing was broadcast — safe to retry later.
+                                        db.release_referral(user_id)
+                                        logger.error(
+                                            f"Referral payout failed (not submitted) for referee "
+                                            f"{user_id} -> referrer {referrer_id}: {rr['message']} "
+                                            f"(released for retry)"
+                                        )
+                    except Exception as e:
+                        logger.error(f"Referral processing error for {user_id}: {e}", exc_info=True)
 
                 # Always notify admins — regardless of token send status
                 admin_msg = (

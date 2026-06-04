@@ -4,6 +4,7 @@ import os
 import base58
 import json
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,52 @@ def is_valid_solana_address(address: str) -> bool:
 # RPC HELPERS
 # ─────────────────────────────────────────
 
-def _rpc(payload: dict, timeout: int = 15) -> dict | None:
-    try:
-        r = requests.post(config.RPC_URL, json=payload, timeout=timeout)
-        return r.json()
-    except Exception as e:
-        logger.error(f"RPC error: {e}")
-        return None
+def _rpc(payload: dict, timeout: int = 15, retries: int = 4) -> dict | None:
+    """
+    POST a JSON-RPC request. Retries with exponential backoff on HTTP 429
+    (rate limit) and transient errors, so a busy RPC doesn't break us.
+    """
+    delay = 0.5
+    for attempt in range(retries):
+        try:
+            r = requests.post(config.RPC_URL, json=payload, timeout=timeout)
+            if r.status_code == 429:
+                logger.warning(f"RPC 429 (attempt {attempt + 1}/{retries}); backing off {delay}s")
+                time.sleep(delay)
+                delay = min(delay * 2, 8)
+                continue
+            return r.json()
+        except Exception as e:
+            logger.error(f"RPC error (attempt {attempt + 1}/{retries}): {e}")
+            time.sleep(delay)
+            delay = min(delay * 2, 8)
+    logger.error("RPC failed after all retries")
+    return None
+
+
+def confirm_signature(sig: str, tries: int = 15, delay: float = 2.0) -> str:
+    """
+    Poll a transaction signature's status, tolerant of rate limits.
+    Returns one of: "confirmed", "failed" (errored on-chain),
+    or "unknown" (not visible / still pending after all tries).
+    """
+    for _ in range(tries):
+        data = _rpc({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getSignatureStatuses",
+            "params": [[sig], {"searchTransactionHistory": True}],
+        })
+        try:
+            st = data["result"]["value"][0]
+            if st is not None:
+                if st.get("err") is not None:
+                    return "failed"
+                if st.get("confirmationStatus") in ("confirmed", "finalized"):
+                    return "confirmed"
+        except Exception:
+            pass
+        time.sleep(delay)
+    return "unknown"
 
 
 def get_transaction(tx_signature: str) -> dict | None:
@@ -264,10 +304,22 @@ def _load_airdrop_keypair():
 
 def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
     """
-    Send TKB tokens using solana-py + spl Token client.
-    Uses get_or_create to safely handle existing/missing ATAs.
+    Send TKB from the airdrop wallet.
+
+    We submit WITHOUT the library's built-in confirmation (skip_confirmation=True)
+    and confirm the signature ourselves with a rate-limit-tolerant poll. This
+    avoids the failure mode where the transfer actually lands but a 429 on the
+    confirmation poll makes us think it failed.
+
+    Returns:
+        success      : True only if the transfer is CONFIRMED on-chain.
+        tx_signature : the transfer signature if we submitted one (even if not
+                       yet confirmed) — so a retry can CHECK it before resending
+                       and never double-send. None if nothing was submitted.
+        submitted    : True if a transfer was broadcast (a signature exists).
+        message      : human-readable status.
     """
-    result = {"success": False, "tx_signature": None, "message": ""}
+    result = {"success": False, "tx_signature": None, "submitted": False, "message": ""}
 
     key = config.AIRDROP_PRIVATE_KEY
     logger.info(f"send_tokens: {int(amount_tokens):,} TKB -> {recipient_wallet[:12]}...")
@@ -280,7 +332,6 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
         return result
 
     try:
-        from solders.keypair import Keypair
         from solders.pubkey import Pubkey
         from solana.rpc.api import Client
         from solana.rpc.types import TxOpts
@@ -303,49 +354,66 @@ def send_tokens(recipient_wallet: str, amount_tokens: float) -> dict:
 
         token = Token(conn=client, pubkey=mint_pubkey, program_id=program_id, payer=keypair)
 
-        # Derive ATAs deterministically
         sender_ata    = _derive_ata(sender_pubkey, mint_pubkey, program_id)
         recipient_ata = _derive_ata(recipient_pubkey, mint_pubkey, program_id)
         logger.info(f"Sender ATA: {sender_ata}")
         logger.info(f"Recipient ATA: {recipient_ata}")
 
-        # Create recipient ATA only if missing — use get_or_create pattern
-        rec_info = client.get_account_info(recipient_ata)
-        if rec_info.value is None:
-            logger.info("Creating recipient ATA via Token client...")
+        # ── Ensure recipient ATA exists (submit without confirm, then poll) ──
+        if client.get_account_info(recipient_ata).value is None:
+            logger.info("Creating recipient ATA...")
             try:
                 token.create_associated_token_account(
                     owner=recipient_pubkey,
-                    skip_confirmation=False,
+                    skip_confirmation=True,   # confirm by polling, not by blocking
                 )
-                logger.info("Recipient ATA created")
             except Exception as ata_err:
-                # ATA may have been created in a race — check again
-                logger.warning(f"ATA create warning: {ata_err}")
-                rec_info2 = client.get_account_info(recipient_ata)
-                if rec_info2.value is None:
-                    raise
+                logger.warning(f"ATA create warning (will verify): {ata_err}")
+            # Poll until the ATA is visible (handles propagation + 429s)
+            created = False
+            for _ in range(15):
+                try:
+                    if client.get_account_info(recipient_ata).value is not None:
+                        created = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(2)
+            if not created:
+                result["message"] = "Recipient token account not ready yet — will retry."
+                return result  # submitted=False -> safe to retry later
+            logger.info("Recipient ATA ready")
 
-        # Transfer tokens
+        # ── Submit the transfer (no library confirmation) ──
         resp = token.transfer_checked(
             source=sender_ata,
             dest=recipient_ata,
             owner=keypair,
             amount=amount_raw,
             decimals=config.TOKEN_DECIMALS,
-            opts=TxOpts(skip_preflight=False, preflight_commitment=Confirmed),
+            opts=TxOpts(skip_confirmation=True, skip_preflight=False,
+                        preflight_commitment=Confirmed),
         )
         sig = str(resp.value)
-        logger.info(f"Token TX: {sig}")
-        result["success"]      = True
+        result["submitted"] = True
         result["tx_signature"] = sig
-        result["message"]      = f"{int(amount_tokens):,} TKB sent! TX: {sig}"
+        logger.info(f"Token TX submitted: {sig} — confirming...")
+
+        # ── Confirm it ourselves, tolerant of rate limits ──
+        status = confirm_signature(sig)
+        if status == "confirmed":
+            result["success"] = True
+            result["message"] = f"{int(amount_tokens):,} TKB sent! TX: {sig}"
+        elif status == "failed":
+            result["message"] = f"Transfer failed on-chain: {sig}"
+        else:
+            result["message"] = f"Submitted but not yet confirmed: {sig}"
         return result
 
     except Exception as e:
         logger.error(f"Token send error: {e}", exc_info=True)
         result["message"] = f"Token send failed: {str(e)}"
-        return result
+        return result  # submitted=False -> safe to retry
 
 def _derive_ata(owner, mint, program_id):
     from solders.pubkey import Pubkey
