@@ -83,10 +83,21 @@ async def start(update, context):
         payload = args[0]
         if payload.startswith("ref_"):
             ref = payload[4:]
-            if ref.isdigit():
-                # Record who invited this user (no-op if self / already referred)
+            if ref.isdigit() and ref != str(u.id):
                 if db.record_referral(u.id, int(ref)):
                     logger.info(f"Referral recorded: {u.id} invited by {ref}")
+                    for aid in config.ADMIN_IDS:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=aid,
+                                text=(f"🔗 Referral captured: user {u.id} "
+                                      f"({'@'+u.username if u.username else 'no username'}) "
+                                      f"was invited by {ref}"),
+                            )
+                        except Exception:
+                            pass
+                else:
+                    logger.info(f"Referral NOT recorded for {u.id} (self-referral or already referred)")
             # fall through to normal welcome below
         elif payload == "refer":
             await refer_command(update, context)
@@ -155,6 +166,9 @@ async def register_wallet_handler(update, context):
         await update.message.reply_text("❌ Invalid address. Try again.")
         return REGISTER_WALLET
     db.register_wallet(user.id, user.username, wallet)
+    # If this user referred people who already bought while they had no wallet,
+    # pay those referral rewards now — instantly.
+    await process_pending_referrals(context.bot, only_referrer=user.id)
     tps = int(1 / config.PRESALE_PRICE_SOL)
     # Immediately show how to buy after registering
     await update.message.reply_text(
@@ -518,6 +532,96 @@ def build_bot():
     app.add_handler(CallbackQueryHandler(button_handler))
     return app
 
+async def _try_pay_referral(referee_id, bot):
+    """
+    Pay the referrer 50 TKB for `referee_id`'s qualifying buy. Safe to call
+    from anywhere (monitor on a buy, the periodic pass, or wallet registration)
+    — claim_referral atomically locks the row so a referral pays out only once.
+
+    If the referrer has no wallet yet, the referral is parked in state 3
+    (qualified, awaiting wallet) and gets paid automatically the moment the
+    referrer registers a wallet or on the next monitor pass.
+    """
+    try:
+        referrer_id = db.claim_referral(referee_id)   # locks from state 0 or 3
+        if not referrer_id:
+            return  # not referred, already paid, or being paid elsewhere
+
+        referrer_wallet = db.get_wallet(referrer_id)
+        if not referrer_wallet:
+            db.hold_referral_qualified(referee_id)     # 2 -> 3, retry later
+            logger.info(
+                f"Referral {referee_id} -> {referrer_id}: referee qualified but "
+                f"referrer has no wallet yet — parked, will auto-pay on register"
+            )
+            return
+
+        rr = solana_utils.send_tokens(referrer_wallet, config.REFERRAL_REWARD_TKB)
+        if rr["success"]:
+            db.mark_referral_paid(referee_id)
+            logger.info(
+                f"Referral paid ✅ {config.REFERRAL_REWARD_TKB} {config.TOKEN_SYMBOL} "
+                f"-> referrer {referrer_id}"
+            )
+            try:
+                await bot.send_message(
+                    chat_id=int(referrer_id) if str(referrer_id).isdigit() else referrer_id,
+                    text=(
+                        f"🎉 *Referral Reward!*\n\n"
+                        f"Someone you invited just bought ${config.TOKEN_SYMBOL} — "
+                        f"*{config.REFERRAL_REWARD_TKB} {config.TOKEN_SYMBOL}* has been "
+                        f"sent to your wallet!\n👛 `{referrer_wallet}`"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify referrer {referrer_id}: {e}")
+            for aid in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        chat_id=aid,
+                        text=(f"🎁 Referral paid: {config.REFERRAL_REWARD_TKB} "
+                              f"{config.TOKEN_SYMBOL} to {referrer_id} "
+                              f"(referee {referee_id})"),
+                    )
+                except Exception:
+                    pass
+        elif rr.get("submitted"):
+            # Broadcast but unconfirmed — leave locked (state 2) to avoid a
+            # double-pay; do not auto-retry. Rare now that Helius confirms fast.
+            logger.warning(
+                f"Referral payout submitted but unconfirmed for {referee_id} "
+                f"-> {referrer_id} (tx {rr.get('tx_signature')}); held"
+            )
+        else:
+            # Nothing broadcast — park as qualified so it retries later.
+            db.hold_referral_qualified(referee_id)
+            logger.error(
+                f"Referral payout failed (not submitted) for {referee_id} "
+                f"-> {referrer_id}: {rr['message']} — parked for retry"
+            )
+    except Exception as e:
+        logger.error(f"Referral payout error for {referee_id}: {e}", exc_info=True)
+
+
+async def process_pending_referrals(bot, only_referrer=None):
+    """
+    Pay out any referrals that already qualified (referee bought) but weren't
+    paid yet — typically because the referrer registered their wallet after
+    the buy. Called every monitor loop, and right after a wallet registration
+    (filtered to that referrer) for an instant payout.
+    """
+    try:
+        pending = db.get_qualified_pending_referrals(only_referrer)
+    except Exception as e:
+        logger.error(f"process_pending_referrals: read error: {e}")
+        return
+    for row in pending:
+        # Only attempt if the referrer now has a wallet (avoids churn).
+        if db.get_wallet(row["referrer_id"]):
+            await _try_pay_referral(row["referee_id"], bot)
+
+
 async def redeliver_pending(bot_app):
     """
     Safety net: re-attempt delivery for any contribution whose tokens haven't
@@ -621,6 +725,8 @@ async def monitor_transactions(bot_app):
             # Safety net first: re-deliver any confirmed buys whose tokens
             # haven't landed yet (double-send-safe). Fixes silent non-credits.
             await redeliver_pending(bot_app)
+            # Auto-pay referrals whose referrer registered a wallet after the buy
+            await process_pending_referrals(bot_app.bot)
             recent = solana_utils.get_recent_transactions(25)
 
             for tx_info in recent:
@@ -755,70 +861,12 @@ async def monitor_transactions(bot_app):
                     )
 
                 # ── REFERRAL REWARD ──
-                # Pay the referrer when their referee makes a qualifying buy.
-                # Hooks into the monitor (the single source of truth for
-                # confirmed on-chain payments), pays at most once per referee,
-                # and never blocks the buyer's own flow.
+                # Referee just made a qualifying buy → pay the referrer 50 TKB
+                # instantly (or park it to auto-pay when the referrer registers
+                # a wallet). All the once-only / double-send safety lives in the
+                # shared helper.
                 if user_id and amount_sol >= config.REFERRAL_MIN_BUY_SOL:
-                    try:
-                        referrer_id = db.claim_referral(user_id)
-                        if referrer_id:
-                            referrer_wallet = db.get_wallet(referrer_id)
-                            if not referrer_wallet:
-                                # Referrer hasn't registered a wallet yet —
-                                # release so it can pay on a later buy/check.
-                                db.release_referral(user_id)
-                                logger.info(
-                                    f"Referral for {user_id}: referrer {referrer_id} "
-                                    f"has no wallet yet — held as pending"
-                                )
-                            else:
-                                rr = solana_utils.send_tokens(
-                                    referrer_wallet, config.REFERRAL_REWARD_TKB
-                                )
-                                if rr["success"]:
-                                    db.mark_referral_paid(user_id)
-                                    logger.info(
-                                        f"Referral paid ✅ {config.REFERRAL_REWARD_TKB} "
-                                        f"{config.TOKEN_SYMBOL} -> referrer {referrer_id}"
-                                    )
-                                    try:
-                                        await bot_app.bot.send_message(
-                                            chat_id=referrer_id,
-                                            text=(
-                                                f"🎉 *Referral Reward!*\n\n"
-                                                f"Someone you invited just bought "
-                                                f"${config.TOKEN_SYMBOL} — "
-                                                f"*{config.REFERRAL_REWARD_TKB} "
-                                                f"{config.TOKEN_SYMBOL}* has been sent "
-                                                f"to your wallet!\n👛 `{referrer_wallet}`"
-                                            ),
-                                            parse_mode="Markdown",
-                                            reply_markup=main_menu_keyboard()
-                                        )
-                                    except Exception as e:
-                                        logger.error(f"Failed to notify referrer {referrer_id}: {e}")
-                                else:
-                                    if rr.get("submitted"):
-                                        # Broadcast but unconfirmed — do NOT release
-                                        # (releasing would let it pay again = double
-                                        # reward). Leave it claimed; flag for admin.
-                                        logger.warning(
-                                            f"Referral payout submitted but unconfirmed for "
-                                            f"referee {user_id} -> referrer {referrer_id} "
-                                            f"(tx {rr.get('tx_signature')}); held, NOT retried "
-                                            f"to avoid double-pay"
-                                        )
-                                    else:
-                                        # Nothing was broadcast — safe to retry later.
-                                        db.release_referral(user_id)
-                                        logger.error(
-                                            f"Referral payout failed (not submitted) for referee "
-                                            f"{user_id} -> referrer {referrer_id}: {rr['message']} "
-                                            f"(released for retry)"
-                                        )
-                    except Exception as e:
-                        logger.error(f"Referral processing error for {user_id}: {e}", exc_info=True)
+                    await _try_pay_referral(user_id, bot_app.bot)
 
                 # Always notify admins — regardless of token send status
                 admin_msg = (

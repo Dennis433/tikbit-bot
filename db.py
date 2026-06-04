@@ -21,7 +21,8 @@ def init_db():
         registered_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )""")
     # Referrals: each referee is locked to ONE referrer.
-    # rewarded: 0 = pending, 2 = claiming (in progress), 1 = paid
+    # rewarded: 0 = recorded (referee not yet bought), 2 = paying (lock),
+    #           3 = qualified but awaiting referrer wallet, 1 = paid
     c.execute("""CREATE TABLE IF NOT EXISTS referrals (
         referee_id TEXT PRIMARY KEY,
         referrer_id TEXT NOT NULL,
@@ -146,16 +147,24 @@ def record_referral(referee_id, referrer_id):
     finally:
         conn.close()
 
-def claim_referral(referee_id):
+def claim_referral(referee_id, from_states=(0, 3)):
     """
-    Atomically move this referee's reward from pending(0) -> claiming(2).
-    Returns the referrer_id if WE won the claim, else None (already paid,
-    in progress, or not referred). Guarantees a referral pays out at most once.
+    Atomically lock this referee's reward for payout: move it from any of
+    `from_states` -> 2 (paying). Returns the referrer_id if WE won the lock,
+    else None (already paid, being paid, or not referred). Guarantees a
+    referral pays out at most once across all callers.
+
+    Default claims from 0 (referee just made their first buy) OR 3 (referee
+    already qualified earlier but the referrer had no wallet at the time).
     """
+    states = tuple(from_states)
+    placeholders = ",".join("?" * len(states))
     conn = sqlite3.connect("presale.db")
     c = conn.cursor()
-    c.execute("UPDATE referrals SET rewarded=2 WHERE referee_id=? AND rewarded=0",
-              (str(referee_id),))
+    c.execute(
+        f"UPDATE referrals SET rewarded=2 WHERE referee_id=? AND rewarded IN ({placeholders})",
+        (str(referee_id), *states),
+    )
     conn.commit()
     if c.rowcount == 0:
         conn.close()
@@ -172,14 +181,45 @@ def mark_referral_paid(referee_id):
     conn.commit()
     conn.close()
 
+def hold_referral_qualified(referee_id):
+    """
+    Referee HAS qualified (made a buy) but we couldn't pay the referrer yet
+    (no wallet, or a transient send issue): move 2 -> 3. The periodic pass
+    and the referrer's wallet-registration both retry state-3 referrals.
+    """
+    conn = sqlite3.connect("presale.db")
+    c = conn.cursor()
+    c.execute("UPDATE referrals SET rewarded=3 WHERE referee_id=? AND rewarded=2",
+              (str(referee_id),))
+    conn.commit()
+    conn.close()
+
 def release_referral(referee_id):
-    """Return a claimed-but-unpaid referral to pending so it retries later."""
+    """Return a claimed referral to pending (2 -> 0). Rarely needed now."""
     conn = sqlite3.connect("presale.db")
     c = conn.cursor()
     c.execute("UPDATE referrals SET rewarded=0 WHERE referee_id=? AND rewarded=2",
               (str(referee_id),))
     conn.commit()
     conn.close()
+
+def get_qualified_pending_referrals(referrer_id=None):
+    """
+    Referrals where the referee already qualified (bought) but the reward is
+    still unpaid (state 3). Optionally filtered to one referrer.
+    Returns list of {"referee_id", "referrer_id"}.
+    """
+    conn = sqlite3.connect("presale.db")
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    if referrer_id is None:
+        c.execute("SELECT referee_id, referrer_id FROM referrals WHERE rewarded=3")
+    else:
+        c.execute("SELECT referee_id, referrer_id FROM referrals WHERE rewarded=3 AND referrer_id=?",
+                  (str(referrer_id),))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
 
 def get_referral_count(referrer_id):
     """Number of successfully-rewarded referrals for this referrer."""
