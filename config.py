@@ -33,15 +33,13 @@ TOKEN_NAME     = os.getenv("TOKEN_NAME", "TIKBIT")
 TOKEN_SYMBOL   = os.getenv("TOKEN_SYMBOL", "TKB")
 TOKEN_DECIMALS = int(os.getenv("TOKEN_DECIMALS", "9"))
 
-# SOL price (used for USD conversions and min buy calculation)
-SOL_PRICE_USD     = float(os.getenv("SOL_PRICE_USD", "150"))  # Update via env var as price changes
-
 # Presale settings
 PRESALE_PRICE_SOL = 0.0001   # 1 TKB = 0.0001 SOL → 10,000 TKB per SOL
 HARD_CAP_SOL      = 1000
 SOFT_CAP_SOL      = 100
-MIN_BUY_USD       = 25       # Minimum buy in USD ($25)
-MIN_BUY_SOL       = round(MIN_BUY_USD / SOL_PRICE_USD, 4)  # Derived dynamically from USD minimum
+SOL_PRICE_USD     = float(os.getenv("SOL_PRICE_USD", "80"))  # For display in announcements
+MIN_BUY_USD       = 25                                       # Minimum buy in USD
+MIN_BUY_SOL       = MIN_BUY_USD / SOL_PRICE_USD             # ~0.3125 SOL at $80/SOL
 MAX_BUY_SOL       = 10
 PRESALE_ACTIVE    = True
 
