@@ -114,7 +114,7 @@ async def start(update, context):
         f"🪙 *{config.TOKEN_NAME}* (${config.TOKEN_SYMBOL})\n"
         f"💵 Price: *{config.PRESALE_PRICE_SOL} SOL* per token\n"
         f"📊 Rate: *{tps:,} {config.TOKEN_SYMBOL}* per SOL\n"
-        f"📦 Min: *{config.MIN_BUY_SOL} SOL* ( ~$25) | Max: *{config.MAX_BUY_SOL} SOL*\n"
+        f"📦 Min: *{config.MIN_BUY_SOL} SOL* (~$25) | Max: *{config.MAX_BUY_SOL} SOL*\n"
         f"🎯 Hard Cap: *{config.HARD_CAP_SOL} SOL*\n\n"
         f"📱 New here? Tap *Connect Wallet Guide* below!\n"
         f"📲 Just register your wallet, send SOL, and tokens arrive automatically!\n\n"
@@ -177,7 +177,7 @@ async def register_wallet_handler(update, context):
         f"💰 *How to Buy {config.TOKEN_NAME}*\n\n"
         f"Send SOL to this presale wallet:\n`{config.PRESALE_WALLET}`\n\n"
         f"💱 *{tps:,} {config.TOKEN_SYMBOL} per SOL*\n"
-        f"📦 Min: *{config.MIN_BUY_SOL} SOL* ( ~$25) | Max: *{config.MAX_BUY_SOL} SOL*\n\n"
+        f"📦 Min: *{config.MIN_BUY_SOL} SOL* (~$25) | Max: *{config.MAX_BUY_SOL} SOL*\n\n"
         f"✅ Auto-detected in ~30 seconds — tokens sent to your wallet instantly!\n\n"
         f"📌 Your wallet: `{wallet}`",
         parse_mode="Markdown",
@@ -493,7 +493,7 @@ async def sent_sol_callback(update, context):
             f"✅ *Step 3:* Wait ~30 seconds\n\n"
             f"⚠️ *Important:*\n"
             f"• Send from the *exact* wallet above\n"
-            f"• Minimum *{config.MIN_BUY_SOL} SOL* ( ~$25)\n"
+            f"• Minimum *{config.MIN_BUY_SOL} SOL* (~$25)\n"
             f"• Our monitor detects it automatically and sends tokens\n\n"
             f"💡 You'll get a confirmation here the moment it's detected — "
             f"no need to keep checking!",
@@ -961,7 +961,7 @@ def presale_info():
         "token_name": config.TOKEN_NAME, "token_symbol": config.TOKEN_SYMBOL,
         "price_sol": config.PRESALE_PRICE_SOL, "tokens_per_sol": int(1/config.PRESALE_PRICE_SOL),
         "hard_cap_sol": config.HARD_CAP_SOL, "soft_cap_sol": config.SOFT_CAP_SOL,
-        "min_buy_sol": config.MIN_BUY_SOL, "min_buy_usd": config.MIN_BUY_USD, "max_buy_sol": config.MAX_BUY_SOL,
+        "min_buy_sol": config.MIN_BUY_SOL, "max_buy_sol": config.MAX_BUY_SOL,
         "presale_wallet": config.PRESALE_WALLET, "airdrop_wallet": config.AIRDROP_WALLET,
         "token_mint": config.TOKEN_MINT, "presale_active": config.PRESALE_ACTIVE,
         "total_raised_sol": round(sol, 4), "total_tokens_sold": int(tokens),
